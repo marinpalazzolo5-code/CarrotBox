@@ -179,7 +179,7 @@ Plugins are small separate files in the `plugins/` folder, loaded when the page 
 - **Loading an instrument plugin** puts it on the current instrument. **Effect plugins** are added to the instrument's effect list. **Tools** open their own window and write notes into the song.
 - **Plugin windows** are floating panels. Drag the title bar to move, double-click it (or use the minimize button) to collapse, and close with the X button, with `Esc`, or by clicking outside a modal one. They remember where you left them. Space, undo and the other editor shortcuts, and the computer-keyboard piano, keep working while a plugin window has focus.
 - **Presets.** Every plugin has a preset menu with the factory presets, **Save as my preset...**, **Copy settings** and **Paste settings** (move a sound between channels or songs), **Reset to default** and a **Random** button. Your own presets appear under "My presets" and can be deleted from the same menu.
-- **Knobs.** Drag to change, hold `Shift` for fine control, double-click to reset, right-click to type a value. The mouse wheel works too.
+- **Knobs.** Drag to change, hold `Shift` for fine control, double-click to reset, right-click to type a value (it understands what the knob shows: `42` on a percent knob is 42%, `1.5k` on a frequency knob is 1500 Hz, `250ms` on a time knob is a quarter second). The mouse wheel works too.
 - **Everything saves with the song.** Plugin parameters are part of the song URL and the project file.
 
 Setting: **Open plugin window when loading a plugin** controls whether picking a plugin also opens its window.
@@ -528,6 +528,7 @@ This section lists the main problems found in the first version of the mod and w
 
 **Samples**
 
+- The slowest built-in sounds (piano chords and the melodic loops) are now two to five times faster to generate (the worst case dropped from about 360 ms to about 125 ms), so first use is much less likely to glitch playback.
 - Live preview (clicking keys, the piano roll, or hearing notes while stopped) was silent in some cases because the audio engine was never woken up; it is woken up now.
 - NaN and out-of-range values in sample playback (empty or very short samples, extreme markers, zero-length loops) are guarded so they can no longer take down the audio or the editor.
 - A race that left a kit half-loaded when a note was played too early was fixed; notes wait for their sample.
@@ -554,7 +555,8 @@ This section lists the main problems found in the first version of the mod and w
 
 - Shortcuts cheat sheet (`?`), settings panel (`,`), sound browser (`B`), kit loader (`K`), generator (`G`), edit plugin (`E`), metronome (`T`).
 - Plugin launcher with search and recently used plugins; user presets; copy / paste settings; reset to default; plugin keyboard focus handling; remembered window positions.
-- Right-click on any knob to type a value; double-click to reset; wheel support.
+- Right-click on any knob to type a value in the units it shows (percent, kHz, ms, dB); double-click to reset; wheel support.
+- Renaming patterns and tracks, naming presets, typing knob values and copying text use small in-page dialogs instead of the browser's own prompt, which froze the page and stopped the audio while it was open.
 - Drag and drop a song, project or audio file onto the page.
 - Warn before leaving with unsaved changes (optional), play state in the page title, toast messages, undo-friendly operations.
 - More color themes (18) and a modern skin; interface scale; reduced motion option.
@@ -567,9 +569,8 @@ This section lists the main problems found in the first version of the mod and w
 ## Known limitations
 
 - Audio runs on a script processor node (as in BeepBox). A very heavy song on a slow computer can crackle; raise the buffer by closing other tabs or reduce unison voices and effects.
-- Some of the larger built-in sounds are generated when you first use them, which can cause a brief hiccup once.
+- Built-in sounds are generated the first time you use them. Almost all take a few milliseconds; the longest melodic loops take about a tenth of a second, which can cause one tiny hiccup if they start while the song is playing.
 - Slicex plays slices from C4 upward only. Use the slice markers if you need a different layout.
-- Pattern and track names and preset names use the browser's own text prompt.
 - Imported samples live in your browser. Move them between computers with **Save Project + Samples**.
 - Songs made with CarrotBox only open fully in CarrotBox. BeepBox will ignore the extra data (and the stock BeepBox site cannot play plugin instruments).
 

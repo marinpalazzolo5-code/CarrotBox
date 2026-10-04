@@ -12987,22 +12987,76 @@ FLKitLibrary._loadPromise = null;
         },
         additive(p, r) {
             // Sustained/decaying additive tones. partials: [ratio, amp, decay]
+            // Each partial is a rotating phasor with a multiplicative decay (no sin/exp per sample), and a
+            // partial that has faded below audibility is dropped. With vibrato the frequency moves every
+            // sample, so that case keeps the direct sine.
             const f = p.f || 261.63;
             const out = flBuf(p.len || 2);
             const partials = p.partials;
+            const count = partials.length;
             const phases = partials.map(() => r());
-            for (let i = 0; i < out.length; i++) {
-                const t = i / FL_SR;
-                const vib = p.vib ? 1 + p.vib * Math.sin(2 * Math.PI * 5.2 * t) * Math.min(1, t / 0.4) : 1;
-                let s = 0;
-                for (let k = 0; k < partials.length; k++) {
-                    const pa = partials[k];
-                    const ratio = pa[0] * (p.inharm ? Math.sqrt(1 + p.inharm * pa[0] * pa[0]) : 1);
-                    phases[k] += f * ratio * vib / FL_SR;
-                    s += Math.sin(2 * Math.PI * phases[k]) * pa[1] * (pa[2] > 0 ? Math.exp(-t / pa[2]) : 1);
+            const inc = new Float64Array(count), amp = new Float64Array(count), fall = new Float64Array(count), env = new Float64Array(count);
+            for (let k = 0; k < count; k++) {
+                const pa = partials[k];
+                const ratio = pa[0] * (p.inharm ? Math.sqrt(1 + p.inharm * pa[0] * pa[0]) : 1);
+                inc[k] = f * ratio / FL_SR;
+                amp[k] = pa[1];
+                fall[k] = pa[2] > 0 ? Math.exp(-1 / (pa[2] * FL_SR)) : 1;
+                env[k] = 1;
+            }
+            const attackTime = p.attack ? p.attack : 0.002;
+            if (p.vib) {
+                for (let i = 0; i < out.length; i++) {
+                    const t = i / FL_SR;
+                    const vib = 1 + p.vib * Math.sin(2 * Math.PI * 5.2 * t) * Math.min(1, t / 0.4);
+                    let sum = 0;
+                    for (let k = 0; k < count; k++) {
+                        phases[k] += inc[k] * vib;
+                        sum += Math.sin(2 * Math.PI * phases[k]) * amp[k] * env[k];
+                        env[k] *= fall[k];
+                    }
+                    out[i] = sum * Math.min(1, t / attackTime);
                 }
-                const attack = p.attack ? Math.min(1, t / p.attack) : Math.min(1, t / 0.002);
-                out[i] = s * attack;
+            }
+            else {
+                const cosStep = new Float64Array(count), sinStep = new Float64Array(count), cosPhase = new Float64Array(count), sinPhase = new Float64Array(count);
+                let active = new Int32Array(count);
+                for (let k = 0; k < count; k++) {
+                    cosStep[k] = Math.cos(2 * Math.PI * inc[k]);
+                    sinStep[k] = Math.sin(2 * Math.PI * inc[k]);
+                    cosPhase[k] = Math.cos(2 * Math.PI * (phases[k] + inc[k]));
+                    sinPhase[k] = Math.sin(2 * Math.PI * (phases[k] + inc[k]));
+                    active[k] = k;
+                }
+                let activeCount = count;
+                for (let i = 0; i < out.length; i++) {
+                    let sum = 0;
+                    for (let j = 0; j < activeCount; j++) {
+                        const k = active[j];
+                        const c = cosPhase[k], sn = sinPhase[k];
+                        sum += sn * amp[k] * env[k];
+                        cosPhase[k] = c * cosStep[k] - sn * sinStep[k];
+                        sinPhase[k] = sn * cosStep[k] + c * sinStep[k];
+                        env[k] *= fall[k];
+                    }
+                    const t = i / FL_SR;
+                    out[i] = t < attackTime ? sum * (t / attackTime) : sum;
+                    if ((i & 1023) == 1023) {
+                        // keep the phasors on the unit circle and drop partials that can no longer be heard
+                        let kept = 0;
+                        for (let j = 0; j < activeCount; j++) {
+                            const k = active[j];
+                            const norm = 1 / Math.hypot(cosPhase[k], sinPhase[k]);
+                            cosPhase[k] *= norm;
+                            sinPhase[k] *= norm;
+                            if (fall[k] == 1 || amp[k] * env[k] > 1e-7)
+                                active[kept++] = k;
+                        }
+                        activeCount = kept;
+                        if (activeCount == 0)
+                            break;
+                    }
+                }
             }
             if (p.hammer) {
                 const lp = flLP(2500);
@@ -13015,18 +13069,26 @@ FLKitLibrary._loadPromise = null;
             const f = p.f || 261.63;
             const out = flBuf(p.len || 2);
             let pc = 0, pm = 0, pm2 = 0;
+            // Envelopes are multiplied down sample by sample instead of calling Math.exp for each one.
+            const fall = (seconds) => seconds > 0 ? Math.exp(-1 / (seconds * FL_SR)) : 1;
+            const indexFall = fall(p.indexDecay), index2Fall = fall(p.index2Decay), ampFall = p.decay > 0 ? fall(p.decay) : 1;
+            let indexEnv = 1, index2Env = 1, ampEnv = 1;
+            const attackTime = p.attack || 0.002;
+            const modStep = f * p.ratio / FL_SR, mod2Step = f * (p.ratio2 || 0) / FL_SR, carrierStep = f / FL_SR;
             for (let i = 0; i < out.length; i++) {
-                const t = i / FL_SR;
-                pm += f * p.ratio / FL_SR;
-                const index = p.index * Math.exp(-t / p.indexDecay) + (p.indexFloor || 0);
+                pm += modStep;
+                const index = p.index * indexEnv + (p.indexFloor || 0);
                 let mod = Math.sin(2 * Math.PI * pm) * index;
                 if (p.ratio2) {
-                    pm2 += f * p.ratio2 / FL_SR;
-                    mod += Math.sin(2 * Math.PI * pm2) * p.index2 * Math.exp(-t / p.index2Decay);
+                    pm2 += mod2Step;
+                    mod += Math.sin(2 * Math.PI * pm2) * p.index2 * index2Env;
+                    index2Env *= index2Fall;
                 }
-                pc += f / FL_SR;
-                const env = Math.min(1, t / (p.attack || 0.002)) * (p.decay > 0 ? Math.exp(-t / p.decay) : 1);
-                out[i] = Math.sin(2 * Math.PI * pc + mod) * env;
+                pc += carrierStep;
+                const t = i / FL_SR;
+                out[i] = Math.sin(2 * Math.PI * pc + mod) * (t < attackTime ? t / attackTime : 1) * ampEnv;
+                indexEnv *= indexFall;
+                ampEnv *= ampFall;
             }
             return flFades(flNormalize(out), 0.1, 30);
         },
@@ -31139,10 +31201,10 @@ You should be redirected to the song at:<br /><br />
                 return;
             if (hit.clip > 0) {
                 const pattern = doc.song.channels[hit.channel].patterns[hit.clip - 1];
-                const name = window.prompt("Pattern name:", pattern.name || ("Pattern " + hit.clip));
-                if (name != null) {
-                    doc.record(new ChangeFL(doc, () => { pattern.name = name.trim().slice(0, 40); }, false));
-                }
+                CarrotUI.ask({ title: "Pattern name", value: pattern.name || ("Pattern " + hit.clip), okLabel: "Rename", maxLength: 40 }).then((name) => {
+                    if (name != null)
+                        doc.record(new ChangeFL(doc, () => { pattern.name = name.trim().slice(0, 40); }, false));
+                });
                 return;
             }
             const group = new ChangeGroup();
@@ -31277,9 +31339,10 @@ You should be redirected to the song at:<br /><br />
                         if (event.target == muteButton || event.target == soloButton)
                             return;
                         const channel = doc.song.channels[channelIndex];
-                        const value = window.prompt("Track name:", channel.name || this._defaultTrackName(channelIndex));
-                        if (value != null)
-                            doc.record(new ChangeFL(doc, () => { channel.name = value.trim().slice(0, 40); }, false));
+                        CarrotUI.ask({ title: "Track name", value: channel.name || this._defaultTrackName(channelIndex), okLabel: "Rename", maxLength: 40 }).then((value) => {
+                            if (value != null)
+                                doc.record(new ChangeFL(doc, () => { channel.name = value.trim().slice(0, 40); }, false));
+                        });
                     });
                     muteButton.addEventListener("click", () => {
                         const channel = doc.song.channels[channelIndex];
@@ -33108,6 +33171,31 @@ You should be redirected to the song at:<br /><br />
 	padding-top: 9vh;
 	background: rgba(0,0,0,0.35);
 }
+.cb-ask {
+	width: min(380px, calc(100vw - 32px));
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 12px 14px;
+	background: ${ColorConfig.editorBackground};
+	color: ${ColorConfig.primaryText};
+	border: 1px solid ${ColorConfig.uiWidgetFocus};
+	border-radius: 10px;
+	box-shadow: 0 18px 60px rgba(0,0,0,0.6);
+}
+.cb-ask-title { font-weight: bold; font-size: 15px; }
+.cb-ask input {
+	height: 30px;
+	padding: 0 8px;
+	font-size: 14px;
+	border-radius: 6px;
+	border: none;
+	background: ${ColorConfig.uiWidgetBackground};
+	color: ${ColorConfig.primaryText};
+	outline: 1px solid transparent;
+}
+.cb-ask input:focus { outline-color: ${ColorConfig.uiWidgetFocus}; }
+.cb-ask-buttons { display: flex; justify-content: flex-end; gap: 6px; }
 .cb-launcher {
 	width: min(560px, calc(100vw - 32px));
 	max-height: 76vh;
@@ -33174,6 +33262,39 @@ You should be redirected to the song at:<br /><br />
         const abs = Math.abs(value);
         const digits = spec.step >= 1 ? 0 : abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
         return (unit == "dB" && value > 0 ? "+" : "") + value.toFixed(digits) + unit;
+    }
+    // Typing an exact value into a knob: understands what the knob displays (percentages, "1.2k",
+    // "250ms") so typing 90 on a knob that shows "90%" means 90%, not 90 times full scale.
+    function carrotLeadingNumber(text) {
+        const match = /^\s*([+-]?(?:\d+[.,]?\d*|[.,]\d+))/.exec(String(text));
+        return match ? parseFloat(match[1].replace(",", ".")) : NaN;
+    }
+    function carrotParseTyped(spec, text, current) {
+        const match = /^\s*([+-]?(?:\d+[.,]?\d*|[.,]\d+))\s*([a-zA-Z%]*)/.exec(String(text));
+        if (!match)
+            return NaN;
+        const x = parseFloat(match[1].replace(",", "."));
+        const suffix = match[2].toLowerCase();
+        const unit = spec.unit || "";
+        if (!spec.format) {
+            if (unit == "Hz")
+                return suffix == "k" || suffix == "khz" ? x * 1000 : x;
+            if (unit == "s")
+                return suffix == "ms" ? x / 1000 : suffix == "s" ? x : (current < 1 ? x / 1000 : x);
+            return x;
+        }
+        // A custom display format: if what it shows is a straight line through the knob's range,
+        // convert the typed number back through that line.
+        const shown = (raw) => carrotLeadingNumber(spec.format(raw));
+        const lo = spec.min, hi = spec.max, mid = (lo + hi) / 2, quarter = lo + (hi - lo) * 0.25;
+        const shownLo = shown(lo), shownHi = shown(hi), shownMid = shown(mid), shownQuarter = shown(quarter);
+        if ([shownLo, shownHi, shownMid, shownQuarter].every(Number.isFinite) && shownHi != shownLo) {
+            const tolerance = Math.abs(shownHi - shownLo) * 0.02 + 1e-9;
+            const line = (raw) => shownLo + (raw - lo) * (shownHi - shownLo) / (hi - lo);
+            if (Math.abs(line(mid) - shownMid) <= tolerance && Math.abs(line(quarter) - shownQuarter) <= tolerance)
+                return lo + (x - shownLo) * (hi - lo) / (shownHi - shownLo);
+        }
+        return x;
     }
     function carrotToNorm(spec, value) {
         if (spec.curve == "exp" && spec.min > 0)
@@ -33292,16 +33413,22 @@ You should be redirected to the song at:<br /><br />
             // Right-click: type an exact value.
             el.addEventListener("contextmenu", (event) => {
                 event.preventDefault();
-                const text = window.prompt((spec.label || "Value") + (spec.unit ? " (" + spec.unit.trim() + ")" : "") + ":", String(Math.round(value * 1000) / 1000));
-                if (text == null)
-                    return;
-                const typed = parseFloat(text.replace(",", "."));
-                if (Number.isFinite(typed)) {
-                    let v = Math.max(spec.min, Math.min(spec.max, typed));
-                    if (spec.step)
-                        v = Math.round(v / spec.step) * spec.step;
-                    emit(v, true);
-                }
+                const shownNow = carrotFormatValue(spec, value);
+                const parseable = Number.isFinite(carrotLeadingNumber(shownNow));
+                CarrotUI.ask({ title: spec.label || "Value", label: parseable ? "Type a value from " + carrotFormatValue(spec, spec.min) + " to " + carrotFormatValue(spec, spec.max) : "Type a number from " + spec.min + " to " + spec.max, value: parseable ? shownNow : String(Math.round(value * 1000) / 1000), okLabel: "Set", maxLength: 24 }).then((text) => {
+                    if (text == null)
+                        return;
+                    const typed = carrotParseTyped(spec, text, value);
+                    if (Number.isFinite(typed)) {
+                        let v = Math.max(spec.min, Math.min(spec.max, typed));
+                        if (spec.step)
+                            v = Math.round(v / spec.step) * spec.step;
+                        emit(v, true);
+                    }
+                    else {
+                        flToast("That isn't a number");
+                    }
+                });
             });
             el.addEventListener("wheel", (event) => {
                 event.preventDefault();
@@ -33361,6 +33488,61 @@ You should be redirected to the song at:<br /><br />
             const el = HTML.button({ type: "button", class: "cb-button" + (options.primary ? " cb-primary" : ""), title: options.title || "" }, label);
             el.addEventListener("click", onClick);
             return el;
+        }
+        // A small in-page replacement for window.prompt (which freezes the page, and with it the audio,
+        // while it is open). Resolves with the text, or null when cancelled.
+        //   options: title, label, hint, value, okLabel, maxLength, readOnly (just show text to copy)
+        static ask(options = {}) {
+            return new Promise((resolve) => {
+                const previous = document.activeElement;
+                let finished = false;
+                const input = HTML.input({ type: "text", value: options.value == undefined ? "" : String(options.value), maxlength: String(options.maxLength || 4000), spellcheck: "false", autocomplete: "off" });
+                if (options.readOnly)
+                    input.readOnly = true;
+                const finish = (result) => {
+                    if (finished)
+                        return;
+                    finished = true;
+                    overlay.remove();
+                    try {
+                        if (previous && previous.focus && document.contains(previous))
+                            previous.focus({ preventScroll: true });
+                    }
+                    catch (error) { }
+                    resolve(result);
+                };
+                const cancel = CarrotUI.button(options.readOnly ? "Close" : "Cancel", () => finish(null));
+                const ok = CarrotUI.button(options.okLabel || "OK", () => finish(input.value), { primary: true });
+                const children = [HTML.div({ class: "cb-ask-title" }, options.title || "Enter a value")];
+                if (options.label)
+                    children.push(HTML.div({ class: "cb-hint" }, options.label));
+                children.push(input);
+                if (options.hint)
+                    children.push(HTML.div({ class: "cb-hint" }, options.hint));
+                children.push(HTML.div({ class: "cb-ask-buttons" }, options.readOnly ? ok : cancel, options.readOnly ? "" : ok));
+                const card = HTML.div({ class: "cb-ask", role: "dialog", "aria-modal": "true" }, ...children);
+                const overlay = HTML.div({ class: "cb-overlay cb-ask-overlay", style: "z-index: 95;" }, card);
+                // Typing here must never reach the editor's shortcuts.
+                for (const type of ["keydown", "keyup", "keypress"])
+                    card.addEventListener(type, (event) => event.stopPropagation());
+                card.addEventListener("keydown", (event) => {
+                    if (event.key == "Enter") {
+                        event.preventDefault();
+                        finish(options.readOnly ? null : input.value);
+                    }
+                    else if (event.key == "Escape") {
+                        event.preventDefault();
+                        finish(null);
+                    }
+                });
+                overlay.addEventListener("pointerdown", (event) => {
+                    if (event.target == overlay)
+                        finish(null);
+                });
+                document.body.appendChild(overlay);
+                input.focus();
+                input.select();
+            });
         }
         static section(title, ...children) {
             const header = HTML.div({ class: "cb-section-title" }, title);
@@ -34292,21 +34474,22 @@ You should be redirected to the song at:<br /><br />
                 flToast("Reset " + plugin.name);
             }
             else if (value == "save") {
-                const name = window.prompt("Name for this preset:", plugin.name + " " + (this._userPresets().length + 1));
-                if (!name || !name.trim())
-                    return;
-                const list = this._userPresets().filter(p => p.name != name.trim());
-                list.push({ name: name.trim().slice(0, 40), params: flCloneJson(this.host.params()) });
-                this._saveUserPresets(list);
-                this._fillPresets();
-                flToast("Saved preset " + name.trim());
+                CarrotUI.ask({ title: "Save preset", label: "Name for this preset", value: plugin.name + " " + (this._userPresets().length + 1), okLabel: "Save", maxLength: 40 }).then((name) => {
+                    if (!name || !name.trim())
+                        return;
+                    const list = this._userPresets().filter(p => p.name != name.trim());
+                    list.push({ name: name.trim().slice(0, 40), params: flCloneJson(this.host.params()) });
+                    this._saveUserPresets(list);
+                    this._fillPresets();
+                    flToast("Saved preset " + name.trim());
+                });
             }
             else if (value == "copy") {
                 const text = JSON.stringify({ carrotbox: 1, plugin: plugin.id, params: this.host.params() });
                 if (navigator.clipboard && navigator.clipboard.writeText)
-                    navigator.clipboard.writeText(text).then(() => flToast("Copied " + plugin.name + " settings"), () => window.prompt("Copy these settings:", text));
+                    navigator.clipboard.writeText(text).then(() => flToast("Copied " + plugin.name + " settings"), () => CarrotUI.ask({ title: "Copy these settings", label: "Copy the text below (Ctrl+C)", value: text, readOnly: true }));
                 else
-                    window.prompt("Copy these settings:", text);
+                    CarrotUI.ask({ title: "Copy these settings", label: "Copy the text below (Ctrl+C)", value: text, readOnly: true });
             }
             else if (value == "paste") {
                 const apply = (text) => {
@@ -34322,9 +34505,9 @@ You should be redirected to the song at:<br /><br />
                     }
                 };
                 if (navigator.clipboard && navigator.clipboard.readText)
-                    navigator.clipboard.readText().then(apply, () => apply(window.prompt("Paste the settings here:") || ""));
+                    navigator.clipboard.readText().then(apply, () => CarrotUI.ask({ title: "Paste settings", label: "Paste the copied settings here (Ctrl+V)", okLabel: "Paste" }).then((text) => { if (text != null) apply(text); }));
                 else
-                    apply(window.prompt("Paste the settings here:") || "");
+                    CarrotUI.ask({ title: "Paste settings", label: "Paste the copied settings here (Ctrl+V)", okLabel: "Paste" }).then((text) => { if (text != null) apply(text); });
             }
             else if (value.startsWith("u:")) {
                 const preset = this._userPresets().find(p => p.name == value.slice(2));
@@ -38624,7 +38807,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
         _copyTextToClipboard(text) {
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text).catch(() => {
-                    window.prompt("Copy to clipboard:", text);
+                    CarrotUI.ask({ title: "Copy to clipboard", label: "Copy the text below (Ctrl+C)", value: text, readOnly: true });
                 });
                 return;
             }
@@ -38636,7 +38819,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
             textField.remove();
             this._refocusStage();
             if (!succeeded)
-                window.prompt("Copy this:", text);
+                CarrotUI.ask({ title: "Copy to clipboard", label: "Copy the text below (Ctrl+C)", value: text, readOnly: true });
         }
         _randomPreset() {
             const isNoise = this.doc.song.getChannelIsNoise(this.doc.channel);

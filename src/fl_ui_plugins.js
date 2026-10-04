@@ -176,6 +176,31 @@
 	padding-top: 9vh;
 	background: rgba(0,0,0,0.35);
 }
+.cb-ask {
+	width: min(380px, calc(100vw - 32px));
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 12px 14px;
+	background: ${ColorConfig.editorBackground};
+	color: ${ColorConfig.primaryText};
+	border: 1px solid ${ColorConfig.uiWidgetFocus};
+	border-radius: 10px;
+	box-shadow: 0 18px 60px rgba(0,0,0,0.6);
+}
+.cb-ask-title { font-weight: bold; font-size: 15px; }
+.cb-ask input {
+	height: 30px;
+	padding: 0 8px;
+	font-size: 14px;
+	border-radius: 6px;
+	border: none;
+	background: ${ColorConfig.uiWidgetBackground};
+	color: ${ColorConfig.primaryText};
+	outline: 1px solid transparent;
+}
+.cb-ask input:focus { outline-color: ${ColorConfig.uiWidgetFocus}; }
+.cb-ask-buttons { display: flex; justify-content: flex-end; gap: 6px; }
 .cb-launcher {
 	width: min(560px, calc(100vw - 32px));
 	max-height: 76vh;
@@ -242,6 +267,39 @@
         const abs = Math.abs(value);
         const digits = spec.step >= 1 ? 0 : abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
         return (unit == "dB" && value > 0 ? "+" : "") + value.toFixed(digits) + unit;
+    }
+    // Typing an exact value into a knob: understands what the knob displays (percentages, "1.2k",
+    // "250ms") so typing 90 on a knob that shows "90%" means 90%, not 90 times full scale.
+    function carrotLeadingNumber(text) {
+        const match = /^\s*([+-]?(?:\d+[.,]?\d*|[.,]\d+))/.exec(String(text));
+        return match ? parseFloat(match[1].replace(",", ".")) : NaN;
+    }
+    function carrotParseTyped(spec, text, current) {
+        const match = /^\s*([+-]?(?:\d+[.,]?\d*|[.,]\d+))\s*([a-zA-Z%]*)/.exec(String(text));
+        if (!match)
+            return NaN;
+        const x = parseFloat(match[1].replace(",", "."));
+        const suffix = match[2].toLowerCase();
+        const unit = spec.unit || "";
+        if (!spec.format) {
+            if (unit == "Hz")
+                return suffix == "k" || suffix == "khz" ? x * 1000 : x;
+            if (unit == "s")
+                return suffix == "ms" ? x / 1000 : suffix == "s" ? x : (current < 1 ? x / 1000 : x);
+            return x;
+        }
+        // A custom display format: if what it shows is a straight line through the knob's range,
+        // convert the typed number back through that line.
+        const shown = (raw) => carrotLeadingNumber(spec.format(raw));
+        const lo = spec.min, hi = spec.max, mid = (lo + hi) / 2, quarter = lo + (hi - lo) * 0.25;
+        const shownLo = shown(lo), shownHi = shown(hi), shownMid = shown(mid), shownQuarter = shown(quarter);
+        if ([shownLo, shownHi, shownMid, shownQuarter].every(Number.isFinite) && shownHi != shownLo) {
+            const tolerance = Math.abs(shownHi - shownLo) * 0.02 + 1e-9;
+            const line = (raw) => shownLo + (raw - lo) * (shownHi - shownLo) / (hi - lo);
+            if (Math.abs(line(mid) - shownMid) <= tolerance && Math.abs(line(quarter) - shownQuarter) <= tolerance)
+                return lo + (x - shownLo) * (hi - lo) / (shownHi - shownLo);
+        }
+        return x;
     }
     function carrotToNorm(spec, value) {
         if (spec.curve == "exp" && spec.min > 0)
@@ -360,16 +418,22 @@
             // Right-click: type an exact value.
             el.addEventListener("contextmenu", (event) => {
                 event.preventDefault();
-                const text = window.prompt((spec.label || "Value") + (spec.unit ? " (" + spec.unit.trim() + ")" : "") + ":", String(Math.round(value * 1000) / 1000));
-                if (text == null)
-                    return;
-                const typed = parseFloat(text.replace(",", "."));
-                if (Number.isFinite(typed)) {
-                    let v = Math.max(spec.min, Math.min(spec.max, typed));
-                    if (spec.step)
-                        v = Math.round(v / spec.step) * spec.step;
-                    emit(v, true);
-                }
+                const shownNow = carrotFormatValue(spec, value);
+                const parseable = Number.isFinite(carrotLeadingNumber(shownNow));
+                CarrotUI.ask({ title: spec.label || "Value", label: parseable ? "Type a value from " + carrotFormatValue(spec, spec.min) + " to " + carrotFormatValue(spec, spec.max) : "Type a number from " + spec.min + " to " + spec.max, value: parseable ? shownNow : String(Math.round(value * 1000) / 1000), okLabel: "Set", maxLength: 24 }).then((text) => {
+                    if (text == null)
+                        return;
+                    const typed = carrotParseTyped(spec, text, value);
+                    if (Number.isFinite(typed)) {
+                        let v = Math.max(spec.min, Math.min(spec.max, typed));
+                        if (spec.step)
+                            v = Math.round(v / spec.step) * spec.step;
+                        emit(v, true);
+                    }
+                    else {
+                        flToast("That isn't a number");
+                    }
+                });
             });
             el.addEventListener("wheel", (event) => {
                 event.preventDefault();
@@ -429,6 +493,61 @@
             const el = HTML.button({ type: "button", class: "cb-button" + (options.primary ? " cb-primary" : ""), title: options.title || "" }, label);
             el.addEventListener("click", onClick);
             return el;
+        }
+        // A small in-page replacement for window.prompt (which freezes the page, and with it the audio,
+        // while it is open). Resolves with the text, or null when cancelled.
+        //   options: title, label, hint, value, okLabel, maxLength, readOnly (just show text to copy)
+        static ask(options = {}) {
+            return new Promise((resolve) => {
+                const previous = document.activeElement;
+                let finished = false;
+                const input = HTML.input({ type: "text", value: options.value == undefined ? "" : String(options.value), maxlength: String(options.maxLength || 4000), spellcheck: "false", autocomplete: "off" });
+                if (options.readOnly)
+                    input.readOnly = true;
+                const finish = (result) => {
+                    if (finished)
+                        return;
+                    finished = true;
+                    overlay.remove();
+                    try {
+                        if (previous && previous.focus && document.contains(previous))
+                            previous.focus({ preventScroll: true });
+                    }
+                    catch (error) { }
+                    resolve(result);
+                };
+                const cancel = CarrotUI.button(options.readOnly ? "Close" : "Cancel", () => finish(null));
+                const ok = CarrotUI.button(options.okLabel || "OK", () => finish(input.value), { primary: true });
+                const children = [HTML.div({ class: "cb-ask-title" }, options.title || "Enter a value")];
+                if (options.label)
+                    children.push(HTML.div({ class: "cb-hint" }, options.label));
+                children.push(input);
+                if (options.hint)
+                    children.push(HTML.div({ class: "cb-hint" }, options.hint));
+                children.push(HTML.div({ class: "cb-ask-buttons" }, options.readOnly ? ok : cancel, options.readOnly ? "" : ok));
+                const card = HTML.div({ class: "cb-ask", role: "dialog", "aria-modal": "true" }, ...children);
+                const overlay = HTML.div({ class: "cb-overlay cb-ask-overlay", style: "z-index: 95;" }, card);
+                // Typing here must never reach the editor's shortcuts.
+                for (const type of ["keydown", "keyup", "keypress"])
+                    card.addEventListener(type, (event) => event.stopPropagation());
+                card.addEventListener("keydown", (event) => {
+                    if (event.key == "Enter") {
+                        event.preventDefault();
+                        finish(options.readOnly ? null : input.value);
+                    }
+                    else if (event.key == "Escape") {
+                        event.preventDefault();
+                        finish(null);
+                    }
+                });
+                overlay.addEventListener("pointerdown", (event) => {
+                    if (event.target == overlay)
+                        finish(null);
+                });
+                document.body.appendChild(overlay);
+                input.focus();
+                input.select();
+            });
         }
         static section(title, ...children) {
             const header = HTML.div({ class: "cb-section-title" }, title);
@@ -1360,21 +1479,22 @@
                 flToast("Reset " + plugin.name);
             }
             else if (value == "save") {
-                const name = window.prompt("Name for this preset:", plugin.name + " " + (this._userPresets().length + 1));
-                if (!name || !name.trim())
-                    return;
-                const list = this._userPresets().filter(p => p.name != name.trim());
-                list.push({ name: name.trim().slice(0, 40), params: flCloneJson(this.host.params()) });
-                this._saveUserPresets(list);
-                this._fillPresets();
-                flToast("Saved preset " + name.trim());
+                CarrotUI.ask({ title: "Save preset", label: "Name for this preset", value: plugin.name + " " + (this._userPresets().length + 1), okLabel: "Save", maxLength: 40 }).then((name) => {
+                    if (!name || !name.trim())
+                        return;
+                    const list = this._userPresets().filter(p => p.name != name.trim());
+                    list.push({ name: name.trim().slice(0, 40), params: flCloneJson(this.host.params()) });
+                    this._saveUserPresets(list);
+                    this._fillPresets();
+                    flToast("Saved preset " + name.trim());
+                });
             }
             else if (value == "copy") {
                 const text = JSON.stringify({ carrotbox: 1, plugin: plugin.id, params: this.host.params() });
                 if (navigator.clipboard && navigator.clipboard.writeText)
-                    navigator.clipboard.writeText(text).then(() => flToast("Copied " + plugin.name + " settings"), () => window.prompt("Copy these settings:", text));
+                    navigator.clipboard.writeText(text).then(() => flToast("Copied " + plugin.name + " settings"), () => CarrotUI.ask({ title: "Copy these settings", label: "Copy the text below (Ctrl+C)", value: text, readOnly: true }));
                 else
-                    window.prompt("Copy these settings:", text);
+                    CarrotUI.ask({ title: "Copy these settings", label: "Copy the text below (Ctrl+C)", value: text, readOnly: true });
             }
             else if (value == "paste") {
                 const apply = (text) => {
@@ -1390,9 +1510,9 @@
                     }
                 };
                 if (navigator.clipboard && navigator.clipboard.readText)
-                    navigator.clipboard.readText().then(apply, () => apply(window.prompt("Paste the settings here:") || ""));
+                    navigator.clipboard.readText().then(apply, () => CarrotUI.ask({ title: "Paste settings", label: "Paste the copied settings here (Ctrl+V)", okLabel: "Paste" }).then((text) => { if (text != null) apply(text); }));
                 else
-                    apply(window.prompt("Paste the settings here:") || "");
+                    CarrotUI.ask({ title: "Paste settings", label: "Paste the copied settings here (Ctrl+V)", okLabel: "Paste" }).then((text) => { if (text != null) apply(text); });
             }
             else if (value.startsWith("u:")) {
                 const preset = this._userPresets().find(p => p.name == value.slice(2));

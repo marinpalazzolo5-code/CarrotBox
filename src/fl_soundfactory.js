@@ -419,22 +419,76 @@
         },
         additive(p, r) {
             // Sustained/decaying additive tones. partials: [ratio, amp, decay]
+            // Each partial is a rotating phasor with a multiplicative decay (no sin/exp per sample), and a
+            // partial that has faded below audibility is dropped. With vibrato the frequency moves every
+            // sample, so that case keeps the direct sine.
             const f = p.f || 261.63;
             const out = flBuf(p.len || 2);
             const partials = p.partials;
+            const count = partials.length;
             const phases = partials.map(() => r());
-            for (let i = 0; i < out.length; i++) {
-                const t = i / FL_SR;
-                const vib = p.vib ? 1 + p.vib * Math.sin(2 * Math.PI * 5.2 * t) * Math.min(1, t / 0.4) : 1;
-                let s = 0;
-                for (let k = 0; k < partials.length; k++) {
-                    const pa = partials[k];
-                    const ratio = pa[0] * (p.inharm ? Math.sqrt(1 + p.inharm * pa[0] * pa[0]) : 1);
-                    phases[k] += f * ratio * vib / FL_SR;
-                    s += Math.sin(2 * Math.PI * phases[k]) * pa[1] * (pa[2] > 0 ? Math.exp(-t / pa[2]) : 1);
+            const inc = new Float64Array(count), amp = new Float64Array(count), fall = new Float64Array(count), env = new Float64Array(count);
+            for (let k = 0; k < count; k++) {
+                const pa = partials[k];
+                const ratio = pa[0] * (p.inharm ? Math.sqrt(1 + p.inharm * pa[0] * pa[0]) : 1);
+                inc[k] = f * ratio / FL_SR;
+                amp[k] = pa[1];
+                fall[k] = pa[2] > 0 ? Math.exp(-1 / (pa[2] * FL_SR)) : 1;
+                env[k] = 1;
+            }
+            const attackTime = p.attack ? p.attack : 0.002;
+            if (p.vib) {
+                for (let i = 0; i < out.length; i++) {
+                    const t = i / FL_SR;
+                    const vib = 1 + p.vib * Math.sin(2 * Math.PI * 5.2 * t) * Math.min(1, t / 0.4);
+                    let sum = 0;
+                    for (let k = 0; k < count; k++) {
+                        phases[k] += inc[k] * vib;
+                        sum += Math.sin(2 * Math.PI * phases[k]) * amp[k] * env[k];
+                        env[k] *= fall[k];
+                    }
+                    out[i] = sum * Math.min(1, t / attackTime);
                 }
-                const attack = p.attack ? Math.min(1, t / p.attack) : Math.min(1, t / 0.002);
-                out[i] = s * attack;
+            }
+            else {
+                const cosStep = new Float64Array(count), sinStep = new Float64Array(count), cosPhase = new Float64Array(count), sinPhase = new Float64Array(count);
+                let active = new Int32Array(count);
+                for (let k = 0; k < count; k++) {
+                    cosStep[k] = Math.cos(2 * Math.PI * inc[k]);
+                    sinStep[k] = Math.sin(2 * Math.PI * inc[k]);
+                    cosPhase[k] = Math.cos(2 * Math.PI * (phases[k] + inc[k]));
+                    sinPhase[k] = Math.sin(2 * Math.PI * (phases[k] + inc[k]));
+                    active[k] = k;
+                }
+                let activeCount = count;
+                for (let i = 0; i < out.length; i++) {
+                    let sum = 0;
+                    for (let j = 0; j < activeCount; j++) {
+                        const k = active[j];
+                        const c = cosPhase[k], sn = sinPhase[k];
+                        sum += sn * amp[k] * env[k];
+                        cosPhase[k] = c * cosStep[k] - sn * sinStep[k];
+                        sinPhase[k] = sn * cosStep[k] + c * sinStep[k];
+                        env[k] *= fall[k];
+                    }
+                    const t = i / FL_SR;
+                    out[i] = t < attackTime ? sum * (t / attackTime) : sum;
+                    if ((i & 1023) == 1023) {
+                        // keep the phasors on the unit circle and drop partials that can no longer be heard
+                        let kept = 0;
+                        for (let j = 0; j < activeCount; j++) {
+                            const k = active[j];
+                            const norm = 1 / Math.hypot(cosPhase[k], sinPhase[k]);
+                            cosPhase[k] *= norm;
+                            sinPhase[k] *= norm;
+                            if (fall[k] == 1 || amp[k] * env[k] > 1e-7)
+                                active[kept++] = k;
+                        }
+                        activeCount = kept;
+                        if (activeCount == 0)
+                            break;
+                    }
+                }
             }
             if (p.hammer) {
                 const lp = flLP(2500);
@@ -447,18 +501,26 @@
             const f = p.f || 261.63;
             const out = flBuf(p.len || 2);
             let pc = 0, pm = 0, pm2 = 0;
+            // Envelopes are multiplied down sample by sample instead of calling Math.exp for each one.
+            const fall = (seconds) => seconds > 0 ? Math.exp(-1 / (seconds * FL_SR)) : 1;
+            const indexFall = fall(p.indexDecay), index2Fall = fall(p.index2Decay), ampFall = p.decay > 0 ? fall(p.decay) : 1;
+            let indexEnv = 1, index2Env = 1, ampEnv = 1;
+            const attackTime = p.attack || 0.002;
+            const modStep = f * p.ratio / FL_SR, mod2Step = f * (p.ratio2 || 0) / FL_SR, carrierStep = f / FL_SR;
             for (let i = 0; i < out.length; i++) {
-                const t = i / FL_SR;
-                pm += f * p.ratio / FL_SR;
-                const index = p.index * Math.exp(-t / p.indexDecay) + (p.indexFloor || 0);
+                pm += modStep;
+                const index = p.index * indexEnv + (p.indexFloor || 0);
                 let mod = Math.sin(2 * Math.PI * pm) * index;
                 if (p.ratio2) {
-                    pm2 += f * p.ratio2 / FL_SR;
-                    mod += Math.sin(2 * Math.PI * pm2) * p.index2 * Math.exp(-t / p.index2Decay);
+                    pm2 += mod2Step;
+                    mod += Math.sin(2 * Math.PI * pm2) * p.index2 * index2Env;
+                    index2Env *= index2Fall;
                 }
-                pc += f / FL_SR;
-                const env = Math.min(1, t / (p.attack || 0.002)) * (p.decay > 0 ? Math.exp(-t / p.decay) : 1);
-                out[i] = Math.sin(2 * Math.PI * pc + mod) * env;
+                pc += carrierStep;
+                const t = i / FL_SR;
+                out[i] = Math.sin(2 * Math.PI * pc + mod) * (t < attackTime ? t / attackTime : 1) * ampEnv;
+                indexEnv *= indexFall;
+                ampEnv *= ampFall;
             }
             return flFades(flNormalize(out), 0.1, 30);
         },

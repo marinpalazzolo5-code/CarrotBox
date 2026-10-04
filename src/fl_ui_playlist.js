@@ -361,10 +361,10 @@
                 return;
             if (hit.clip > 0) {
                 const pattern = doc.song.channels[hit.channel].patterns[hit.clip - 1];
-                const name = window.prompt("Pattern name:", pattern.name || ("Pattern " + hit.clip));
-                if (name != null) {
-                    doc.record(new ChangeFL(doc, () => { pattern.name = name.trim().slice(0, 40); }, false));
-                }
+                CarrotUI.ask({ title: "Pattern name", value: pattern.name || ("Pattern " + hit.clip), okLabel: "Rename", maxLength: 40 }).then((name) => {
+                    if (name != null)
+                        doc.record(new ChangeFL(doc, () => { pattern.name = name.trim().slice(0, 40); }, false));
+                });
                 return;
             }
             const group = new ChangeGroup();
@@ -499,9 +499,10 @@
                         if (event.target == muteButton || event.target == soloButton)
                             return;
                         const channel = doc.song.channels[channelIndex];
-                        const value = window.prompt("Track name:", channel.name || this._defaultTrackName(channelIndex));
-                        if (value != null)
-                            doc.record(new ChangeFL(doc, () => { channel.name = value.trim().slice(0, 40); }, false));
+                        CarrotUI.ask({ title: "Track name", value: channel.name || this._defaultTrackName(channelIndex), okLabel: "Rename", maxLength: 40 }).then((value) => {
+                            if (value != null)
+                                doc.record(new ChangeFL(doc, () => { channel.name = value.trim().slice(0, 40); }, false));
+                        });
                     });
                     muteButton.addEventListener("click", () => {
                         const channel = doc.song.channels[channelIndex];

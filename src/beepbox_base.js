@@ -24479,7 +24479,7 @@ You should be redirected to the song at:<br /><br />
         _copyTextToClipboard(text) {
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text).catch(() => {
-                    window.prompt("Copy to clipboard:", text);
+                    CarrotUI.ask({ title: "Copy to clipboard", label: "Copy the text below (Ctrl+C)", value: text, readOnly: true });
                 });
                 return;
             }
@@ -24491,7 +24491,7 @@ You should be redirected to the song at:<br /><br />
             textField.remove();
             this._refocusStage();
             if (!succeeded)
-                window.prompt("Copy this:", text);
+                CarrotUI.ask({ title: "Copy to clipboard", label: "Copy the text below (Ctrl+C)", value: text, readOnly: true });
         }
         _randomPreset() {
             const isNoise = this.doc.song.getChannelIsNoise(this.doc.channel);
