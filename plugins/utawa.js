@@ -4,8 +4,10 @@
  *  - type lyrics; each note in the channel sings the next syllable, in song
  *    order (spaces or hyphens separate syllables, "-" holds the previous vowel,
  *    "." is a silent note, [l ah v] spells phonemes directly)
- *  - English (spelling rules + a dictionary of common lyric words) and
- *    Japanese romaji
+ *  - English (spelling rules + a dictionary of common lyric words), Japanese
+ *    romaji, Spanish and Chinese pinyin; any note's lyric can be edited on its own
+ *  - glides from the previous note (portamento) and legato joins between
+ *    connected notes, like a vocal synth's note transitions
  *  - formant synthesis: glottal source with breath, a five-formant vocal tract,
  *    plosives, fricatives, nasals and glides, diphthongs and final consonants
  *    on note release
@@ -29,6 +31,15 @@
 .cb-utawa-chip small { opacity: 0.6; margin-left: 3px; }
 .cb-utawa-chip.cb-now { background: var(--cb-plugin-color, #ff7eb6); color: #111; }
 .cb-utawa-chip.cb-rest { opacity: 0.5; }
+.cb-utawa-chip { cursor: pointer; border: 1px solid transparent; }
+.cb-utawa-chip:hover { border-color: var(--cb-plugin-color, #ff7eb6); }
+.cb-utawa-chip.cb-edited { box-shadow: inset 0 -2px 0 var(--cb-plugin-color, #ff7eb6); }
+.cb-utawa-chip em { font-style: normal; opacity: 0.55; margin-right: 4px; font-size: 10px; }
+.cb-utawa-bank { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 8px; margin-bottom: 8px; background: linear-gradient(90deg, rgba(255,126,182,0.22), rgba(255,126,182,0.04)); border: 1px solid rgba(255,126,182,0.3); }
+.cb-utawa-bank .cb-utawa-avatar { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; color: #111; background: var(--cb-plugin-color, #ff7eb6); flex: none; }
+.cb-utawa-bank .cb-utawa-bank-name { font-weight: 600; font-size: 13px; }
+.cb-utawa-bank .cb-utawa-bank-sub { font-size: 11px; opacity: 0.7; }
+.cb-utawa-bank .cb-utawa-bank-pick { margin-left: auto; }
 .cb-utawa-bar { font-size: 10px; opacity: 0.65; padding: 2px 4px; align-self: center; }
 .cb-utawa-ph { font-family: monospace; font-size: 11px; opacity: 0.8; min-height: 14px; }
 `);
@@ -38,7 +49,7 @@
     const PH = {
         a: { t: "v", f: [730, 1090, 2440] }, ae: { t: "v", f: [660, 1720, 2410] }, ah: { t: "v", f: [640, 1190, 2390] }, aw: { t: "v", f: [570, 840, 2410] },
         e: { t: "v", f: [530, 1840, 2480] }, er: { t: "v", f: [490, 1350, 1690] }, ih: { t: "v", f: [390, 1990, 2550] }, i: { t: "v", f: [270, 2290, 3010] },
-        uh: { t: "v", f: [440, 1020, 2240] }, u: { t: "v", f: [300, 870, 2240] }, o: { t: "v", f: [450, 800, 2830] },
+        uh: { t: "v", f: [440, 1020, 2240] }, u: { t: "v", f: [300, 870, 2240] }, o: { t: "v", f: [450, 800, 2830] }, ue: { t: "v", f: [260, 1750, 2150] },
         m: { t: "n", f: [280, 900, 2200], amp: 0.32, dur: 75 }, n: { t: "n", f: [280, 1700, 2600], amp: 0.32, dur: 70 }, ng: { t: "n", f: [280, 2300, 2750], amp: 0.28, dur: 75 },
         l: { t: "l", f: [360, 1300, 2900], amp: 0.62, dur: 60 }, r: { t: "l", f: [420, 1300, 1600], amp: 0.6, dur: 60 }, w: { t: "l", f: [290, 610, 2150], amp: 0.55, dur: 55 }, y: { t: "l", f: [260, 2070, 3020], amp: 0.55, dur: 50 },
         p: { t: "p", burst: [900, 1800], voiced: false, dur: 60 }, b: { t: "p", burst: [900, 1800], voiced: true, dur: 45 },
@@ -49,7 +60,8 @@
         sh: { t: "f", noise: [3200, 2200, 0.55], voiced: false, dur: 105 }, zh: { t: "f", noise: [3000, 2200, 0.35], voiced: true, dur: 80 },
         th: { t: "f", noise: [6200, 7000, 0.14], voiced: false, dur: 80 }, dh: { t: "f", noise: [5000, 7000, 0.09], voiced: true, dur: 45 },
         h: { t: "h", dur: 70 }, ch: { t: "a", fric: "sh", voiced: false, dur: 115 }, j: { t: "a", fric: "zh", voiced: true, dur: 95 }, ts: { t: "a", fric: "s", voiced: false, dur: 100 },
-        jr: { t: "l", f: [380, 1400, 2400], amp: 0.55, dur: 28 }, // Japanese tapped r
+        jr: { t: "l", f: [380, 1400, 2400], amp: 0.55, dur: 28 }, // Japanese / Spanish tapped r
+        rr: { t: "l", f: [400, 1400, 2400], amp: 0.55, dur: 95, trill: true }, // Spanish trilled r
     };
     const DIPHTHONGS = { ai: ["a", "i"], ei: ["e", "i"], oi: ["o", "i"], au: ["a", "u"], ou: ["o", "u"] };
     const isVowelPh = (ph) => (PH[ph] && PH[ph].t == "v") || !!DIPHTHONGS[ph];
@@ -251,7 +263,105 @@
         }
         return out;
     }
+    // ------------------------------------------------------------ Spanish
+    const ES_ONSETS = new Set(["pl", "pr", "bl", "br", "tr", "dr", "kl", "kr", "gl", "gr", "fl", "fr"]);
+    function spanishWord(word, inside = false) {
+        let s = word.toLowerCase().replace(/ñ/g, "ny").replace(/ü/g, "w").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "");
+        const ph = [];
+        const isV = (c) => "aeiou".includes(c || "");
+        for (let i = 0; i < s.length;) {
+            const c = s[i], n = s[i + 1] || "";
+            if (s.startsWith("ch", i)) { ph.push("ch"); i += 2; continue; }
+            if (s.startsWith("ll", i)) { ph.push("y"); i += 2; continue; }
+            if (s.startsWith("rr", i)) { ph.push("rr"); i += 2; continue; }
+            if (s.startsWith("qu", i)) { ph.push("k"); i += 2; continue; }
+            if (s.startsWith("gu", i) && "ei".includes(s[i + 2] || "x")) { ph.push("g"); i += 2; continue; }
+            if (isV(c)) {
+                // i / u next to another vowel glide into it (bueno, siempre); after a vowel they end a diphthong
+                if ((c == "i" || c == "u") && isV(n) && n != c) ph.push(c == "i" ? "y" : "w");
+                else ph.push(c);
+                i++;
+                continue;
+            }
+            switch (c) {
+                case "c": ph.push("ei".includes(n) && n ? "s" : "k"); break;
+                case "g": ph.push("ei".includes(n) && n ? "h" : "g"); break;
+                case "j": ph.push("h"); break;
+                case "h": break;
+                case "v": ph.push("b"); break;
+                case "z": ph.push("s"); break;
+                case "x": ph.push("k", "s"); break;
+                case "y": ph.push(isV(n) ? "y" : "i"); break;
+                case "r": ph.push(i == 0 && !inside ? "rr" : "jr"); break;
+                default: if (PH[c]) ph.push(c);
+            }
+            i++;
+        }
+        // syllables: one per vowel group, consonants go to the next vowel when they can start a syllable
+        const vowel = (p) => PH[p] && PH[p].t == "v";
+        const nuclei = [];
+        for (let i = 0; i < ph.length; i++) {
+            if (vowel(ph[i])) {
+                let j = i;
+                while (j + 1 < ph.length && vowel(ph[j + 1]) && (["i", "u"].includes(ph[j + 1]) || ["i", "u"].includes(ph[j]))) j++;
+                nuclei.push([i, j]);
+                i = j;
+            }
+        }
+        if (nuclei.length == 0) return ph.length ? [{ text: word, ph }] : [];
+        const cuts = [0];
+        for (let k = 0; k + 1 < nuclei.length; k++) {
+            const from = nuclei[k][1] + 1, to = nuclei[k + 1][0];
+            const cluster = ph.slice(from, to);
+            let cut;
+            if (cluster.length <= 1) cut = from;
+            else if (cluster.length == 2) cut = ES_ONSETS.has(cluster.join("")) || (cluster[1] == "jr" && ["p", "b", "t", "d", "k", "g", "f"].includes(cluster[0])) ? from : from + 1;
+            else cut = (ES_ONSETS.has(cluster.slice(-2).join("")) ? to - 2 : to - 1);
+            cuts.push(cut);
+        }
+        const out = [];
+        for (let k = 0; k < cuts.length; k++) {
+            const part = ph.slice(cuts[k], k + 1 < cuts.length ? cuts[k + 1] : ph.length);
+            out.push({ text: cuts.length > 1 ? word + "(" + (k + 1) + ")" : word, ph: part });
+        }
+        return out;
+    }
+    // ------------------------------------------------------------ Chinese pinyin
+    const PINYIN_INITIALS = ["zh", "ch", "sh", "b", "p", "m", "f", "d", "t", "n", "l", "g", "k", "h", "j", "q", "x", "r", "z", "c", "s", "y", "w"];
+    const PINYIN_INITIAL_PH = { b: ["b"], p: ["p"], m: ["m"], f: ["f"], d: ["d"], t: ["t"], n: ["n"], l: ["l"], g: ["g"], k: ["k"], h: ["h"], j: ["j"], q: ["ch"], x: ["sh"], zh: ["j"], ch: ["ch"], sh: ["sh"], r: ["r"], z: ["ts"], c: ["ts"], s: ["s"], y: ["y"], w: ["w"] };
+    const PINYIN_FINALS = {
+        iang: ["y", "a", "ng"], iong: ["y", "u", "ng"], uang: ["w", "a", "ng"], ueng: ["w", "uh", "ng"], iao: ["y", "au"], ian: ["y", "e", "n"], uai: ["w", "ai"], uan: ["w", "a", "n"], van: ["ue", "e", "n"],
+        ang: ["a", "ng"], eng: ["uh", "ng"], ing: ["i", "ng"], ong: ["u", "ng"], ai: ["ai"], ei: ["ei"], ao: ["au"], ou: ["ou"], an: ["a", "n"], en: ["uh", "n"], in: ["i", "n"], un: ["w", "uh", "n"], vn: ["ue", "n"],
+        ia: ["y", "a"], ie: ["y", "e"], iu: ["y", "ou"], ua: ["w", "a"], uo: ["w", "o"], ui: ["w", "ei"], ve: ["ue", "e"], ue: ["ue", "e"], er: ["er"], a: ["a"], o: ["o"], e: ["uh"], i: ["i"], u: ["u"], v: ["ue"],
+    };
+    const PINYIN_FINAL_KEYS = Object.keys(PINYIN_FINALS).sort((x, y) => y.length - x.length);
+    function pinyinWord(word) {
+        const s = word.toLowerCase().replace(/ü/g, "v").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "");
+        const out = [];
+        for (let i = 0; i < s.length;) {
+            const initial = PINYIN_INITIALS.find(x => s.startsWith(x, i)) || "";
+            let j = i + initial.length;
+            let final = PINYIN_FINAL_KEYS.find(f => s.startsWith(f, j));
+            if (!final) {
+                if (initial && !s[j]) { out.push({ text: initial, ph: PINYIN_INITIAL_PH[initial].concat(["uh"]) }); break; }
+                i = Math.max(i + 1, j);
+                continue;
+            }
+            // pinyin spelling rules
+            let ph = PINYIN_FINALS[final].slice();
+            if (["j", "q", "x", "y"].includes(initial) && final[0] == "u") ph = final == "u" ? ["ue"] : final == "un" ? ["ue", "n"] : final == "uan" ? ["ue", "e", "n"] : final == "ue" ? ["ue", "e"] : ph;
+            if (final == "i" && ["zh", "ch", "sh", "r"].includes(initial)) ph = ["er"];
+            if (final == "i" && ["z", "c", "s"].includes(initial)) ph = ["ih"];
+            let onset = initial ? PINYIN_INITIAL_PH[initial].slice() : [];
+            if (initial == "y" && (ph[0] == "y" || ph[0] == "i" || ph[0] == "ue")) onset = [];
+            if (initial == "w" && (ph[0] == "w" || ph[0] == "u")) onset = [];
+            out.push({ text: s.slice(i, j + final.length), ph: onset.concat(ph) });
+            i = j + final.length;
+        }
+        return out;
+    }
     // ------------------------------------------------------------ lyrics
+    const LANGUAGES = ["English", "Japanese (romaji)", "Spanish", "Chinese (pinyin)"];
     const lyricCache = new Map();
     function parseLyrics(text, lang, autoSplit) {
         const cacheKey = lang + "|" + (autoSplit ? 1 : 0) + "|" + text;
@@ -271,6 +381,8 @@
                 if (piece == "." || piece == "*" || piece == "") { if (raw.trim() == "." || raw.trim() == "*") out.push({ text: ".", rest: true, ph: [] }); continue; }
                 let syllables;
                 if (lang == 1) syllables = romajiWord(piece);
+                else if (lang == 2) syllables = spanishWord(piece, pieces.length > 1 && raw != pieces[0]);
+                else if (lang == 3) syllables = pinyinWord(piece);
                 else if (autoSplit && !raw.includes("-")) syllables = englishWord(piece);
                 else {
                     const info = { voicedTh: VOICED_TH.has(piece.toLowerCase()), ow: "ou", single: true };
@@ -318,6 +430,7 @@
             lang: 0, autoSplit: true, wrap: true,
             formant: 1.16, breath: 0.16, tension: 0.55, growl: 0, unison: 1, detune: 10, dynamics: 0.55, volume: 0.8,
             vibDepth: 0.32, vibRate: 5.6, vibDelay: 0.28, scoop: 1.1, fall: 0.6, drift: 0.5, consonant: 1, release: 0.12, robot: false,
+            portamento: 0.45, clearness: 0.5, legato: true, noteLyrics: {}, voiceName: "Default voice",
             fx: [Object.assign(CarrotFX.defaults("reverb"), { mix: 0.18, size: 0.55 })],
         };
     }
@@ -325,6 +438,7 @@
         const d = defaults();
         for (const key of Object.keys(d)) if (p[key] === undefined) p[key] = key == "fx" ? JSON.parse(JSON.stringify(d.fx)) : d[key];
         if (!Array.isArray(p.fx)) p.fx = [];
+        if (!p.noteLyrics || typeof p.noteLyrics != "object" || Array.isArray(p.noteLyrics)) p.noteLyrics = {};
         return p;
     }
     const VOICES = [
@@ -343,6 +457,8 @@
         ["Japanese (romaji)", 1, "ko n ni chi wa a o i so ra u ta o u ta u yo"],
         ["Vowel ooh / ah", 0, "ooh - ah - oh - ooh -"],
         ["Phonemes", 0, "[l ah v] [m ai] [h a r t] [w ou]"],
+        ["Spanish", 2, "can-ta-re-mos ba-jo la lu-na lle-na co-ra-zon"],
+        ["Chinese (pinyin)", 3, "ni hao wo ai ni yue liang dai biao wo de xin"],
     ];
 
     // ------------------------------------------------------------ synthesis
@@ -358,6 +474,21 @@
         }
         else if (params.wrap !== false) index = info.noteIndex % list.length;
         else index = Math.min(info.noteIndex, list.length);
+        // a lyric typed on this note replaces the one from the text
+        const own = info.noteIndex != null ? params.noteLyrics && params.noteLyrics[info.noteIndex] : null;
+        if (own) {
+            const parsed = parseLyrics(String(own), params.lang | 0, false);
+            if (parsed.length > 0) {
+                const syl = parsed[0];
+                let prev = null;
+                if (syl.melisma)
+                    for (let k = 1; k <= list.length && index - k >= 0; k++) {
+                        const before = list[(index - k) % list.length];
+                        if (before && !before.melisma && !before.rest) { prev = before; break; }
+                    }
+                return { syl, prev };
+            }
+        }
         if (index >= list.length) return { syl: { text: "ah", ph: ["ah"] }, prev: null };
         let syl = list[index];
         let prev = null;
@@ -427,7 +558,17 @@
             F: vowelFormants(segs.length ? (PH[segs[0].ph].f ? segs[0].ph : firstVowel) : firstVowel).slice(),
             av: 0, asp: 0, fric: 0, fricBp: null, fricKey: "", amp: 0, t: 0, vibPhase: Math.random() * 6.28, drift: 0, driftTarget: 0, noise: 1, coefCountdown: 0,
             velocity: info.velocity == undefined ? 1 : info.velocity, finalFade: 0, finalFadeLen: Math.floor(0.05 * sr), growlPhase: 0, sr,
+            jitter: 0, jitterTarget: 0, shimmer: 1,
         };
+        // Glide from the previous note when it is close by (portamento); otherwise scoop up from below.
+        const porta = Math.max(0, Math.min(1, p.portamento));
+        if (info.prevDelta != null && info.prevGap != null && info.prevGap < 0.25 && porta > 0 && Math.abs(info.prevDelta) <= 12) {
+            voice.glideFrom = -info.prevDelta;
+            voice.glideTime = 0.03 + porta * 0.22;
+            voice.connected = info.prevGap < 0.03;
+        }
+        // A note that runs straight into the next one does not fall or fade slowly.
+        voice.legatoOut = p.legato !== false && info.nextGap != null && info.nextGap < 0.03;
         return voice;
     }
     // what the current phoneme asks for: formants, voicing, aspiration, frication
@@ -447,6 +588,17 @@
             ph = seg.ph; pos = voice.segPos; len = seg.len;
             nextVowel = voice.parts.nucleus[voice.parts.nucleus.length - 1];
         }
+        else if (voice.stage == "fade") {
+            // Keep the last sound going while it fades: a vowel, nasal or liquid rings on,
+            // a fricative hisses out, a plosive or h is already over.
+            const tail = voice.tailPh || voice.parts.nucleus[voice.parts.nucleus.length - 1];
+            const def = PH[tail] || (tail && tail.startsWith("hum:") ? PH[tail.slice(4)] : null);
+            if (!def) return { F: voice.F, av: 0, asp: 0, fric: 0 };
+            if (def.t == "v") return { F: def.f, av: 1, asp: p.breath, fric: 0 };
+            if (def.t == "n" || def.t == "l" || tail.startsWith("hum:")) return { F: def.f, av: def.amp || 0.32, asp: p.breath * 0.3, fric: 0 };
+            if (def.t == "f") return { F: voice.F, av: 0, asp: 0, fric: def.noise[2] * 0.6, fricF: def.noise[0], fricBw: def.noise[1] };
+            return { F: voice.F, av: 0, asp: 0, fric: 0 };
+        }
         const x = pos / Math.max(1, len);
         const def = PH[ph] || (ph && ph.startsWith("hum:") ? PH[ph.slice(4)] : null) || PH.ah;
         const vowelF = vowelFormants(nextVowel);
@@ -454,7 +606,13 @@
         switch (ph && ph.startsWith("hum:") ? "n" : def.t) {
             case "v": return { F: def.f, av: 1, asp: breath, fric: 0 };
             case "n": return { F: def.f, av: def.amp || 0.32, asp: breath * 0.3, fric: 0 };
-            case "l": return { F: def.f, av: def.amp || 0.6, asp: breath * 0.5, fric: 0 };
+            case "l":
+                if (def.trill) {
+                    // a trilled r: the tongue taps about 26 times a second
+                    const flap = 0.5 + 0.5 * Math.cos(2 * Math.PI * 26 * pos / sr);
+                    return { F: def.f, av: (def.amp || 0.55) * (0.3 + 0.7 * flap), asp: breath * 0.5, fric: 0 };
+                }
+                return { F: def.f, av: def.amp || 0.6, asp: breath * 0.5, fric: 0 };
             case "h": return { F: vowelF, av: 0, asp: 0.75, fric: 0 };
             case "f": return { F: vowelF, av: def.voiced ? 0.32 : 0, asp: 0, fric: def.noise[2], fricF: def.noise[0], fricBw: def.noise[1] };
             case "a": {
@@ -499,10 +657,12 @@
         for (let k = 1; k < nucleus.length; k++) segs.push({ ph: nucleus[k], len: Math.floor(0.09 * sr) });
         for (const ph of voice.parts.coda) segs.push({ ph, len: Math.max(1, Math.floor((PH[ph].dur || 60) * scale * sr / 1000)) });
         voice.release = segs;
+        voice.tailPh = segs.length ? segs[segs.length - 1].ph : nucleus[nucleus.length - 1];
         voice.stage = segs.length ? "release" : "fade";
         voice.seg = 0;
         voice.segPos = 0;
-        voice.finalFadeLen = Math.max(1, Math.floor(Math.max(0.03, p.release || 0.12) * sr));
+        const fade = voice.legatoOut ? 0.035 : Math.max(0.03, p.release || 0.12);
+        voice.finalFadeLen = Math.max(1, Math.floor(fade * sr));
     }
     function render(voice, out, start, len, info) {
         if (voice.done) return;
@@ -516,7 +676,10 @@
         const level = 0.42 * p.volume * (1 - p.dynamics + p.dynamics * voice.velocity);
         const smoothF = 1 - Math.exp(-1 / (0.022 * sr));
         const smoothA = 1 - Math.exp(-1 / (0.006 * sr));
-        const bws = [70, 95, 150, 230, 300];
+        // Clearness narrows the formants (clear, ringing) or widens them (soft, airy).
+        const cle = Math.max(0, Math.min(1, p.clearness == undefined ? 0.5 : p.clearness));
+        const bwScale = 1.45 - cle * 0.8;
+        const bws = [70 * bwScale, 95 * bwScale, 150 * bwScale, 230 * bwScale, 300 * bwScale];
         if (!voice.presence) voice.presence = bandpass(2800 * Math.min(1.25, shift), 1.1, sr);
         const presence = 2 + 7 * Math.max(0, Math.min(1, p.tension));
         for (let i = 0; i < len; i++) {
@@ -537,11 +700,21 @@
                 const vibIn = Math.min(1, Math.max(0, (t - p.vibDelay) / 0.35));
                 semis += p.vibDepth * vibIn * Math.sin(voice.vibPhase);
                 voice.vibPhase += 2 * Math.PI * p.vibRate * (1 + 0.04 * Math.sin(t * 1.7)) / sr;
-                semis -= p.scoop * Math.exp(-t / 0.07);
+                if (voice.glideFrom != null) {
+                    // portamento: an S-curve from the previous note's pitch
+                    const x = Math.min(1, t / voice.glideTime);
+                    semis += voice.glideFrom * (1 - x * x * (3 - 2 * x));
+                }
+                else
+                    semis -= p.scoop * Math.exp(-t / 0.07);
+                // tiny pitch jitter keeps long notes from sounding like an oscillator
+                if ((voice.t & 255) == 0) voice.jitterTarget = (Math.random() * 2 - 1) * 0.06;
+                voice.jitter += (voice.jitterTarget - voice.jitter) * 0.002;
+                semis += voice.jitter;
                 if ((voice.t & 2047) == 0) voice.driftTarget = (Math.random() * 2 - 1) * 0.08 * p.drift;
                 voice.drift += (voice.driftTarget - voice.drift) * 0.0004;
                 semis += voice.drift;
-                if (voice.stage == "fade" || voice.stage == "release") semis -= p.fall * Math.min(1, voice.finalFade / Math.max(1, voice.finalFadeLen));
+                if (!voice.legatoOut && (voice.stage == "fade" || voice.stage == "release")) semis -= p.fall * Math.min(1, voice.finalFade / Math.max(1, voice.finalFadeLen));
             }
             let f0 = freq * Math.pow(2, semis / 12);
             if (p.robot) f0 = 440 * Math.pow(2, Math.round(12 * Math.log2(f0 / 440)) / 12);
@@ -582,8 +755,8 @@
             // the "singer's formant": a broad lift around 2.8 kHz that makes vowels clear and bright
             x += runBandpass(voice.presence, x) * presence;
             if (voice.fric > 0.001 && voice.fricBp) x += runBandpass(voice.fricBp, noise) * voice.fric * 2.4;
-            // amplitude: quick attack, final fade after the release consonants
-            voice.amp += ((voice.stage == "fade" ? 0 : 1) - voice.amp) * (voice.stage == "fade" ? 0 : 0.01);
+            // amplitude: quick attack (softer when gliding in from the previous note), final fade after the release consonants
+            voice.amp += ((voice.stage == "fade" ? 0 : 1) - voice.amp) * (voice.stage == "fade" ? 0 : voice.connected ? 0.004 : 0.01);
             let gain = voice.amp;
             if (voice.stage == "fade") {
                 voice.finalFade++;
@@ -623,7 +796,7 @@
         lyrics.value = getP().lyrics;
         for (const type of ["keydown", "keyup", "keypress"]) lyrics.addEventListener(type, (e) => e.stopPropagation());
         lyrics.addEventListener("input", () => { getP().lyrics = lyrics.value; host.changed(true); updateMap(); });
-        const langSelect = CarrotUI.select({ label: "Language", options: ["English", "Japanese (romaji)"], value: getP().lang, onChange: (v) => { getP().lang = v; host.changed(true); updateMap(); } });
+        const langSelect = CarrotUI.select({ label: "Language", options: LANGUAGES, value: getP().lang, onChange: (v) => { getP().lang = v; host.changed(true); updateMap(); updateBank(); } });
         const splitToggle = CarrotUI.toggle({ label: "Split words into syllables", value: getP().autoSplit, title: "hello becomes hel-lo automatically (English)", onChange: (v) => { getP().autoSplit = v; host.changed(true); updateMap(); } });
         const wrapToggle = CarrotUI.toggle({ label: "Repeat lyrics", value: getP().wrap, title: "When the notes outlast the lyrics, start again from the first syllable (off: sing 'ah')", onChange: (v) => { getP().wrap = v; host.changed(true); updateMap(); } });
         const examples = HTML.select({ class: "cb-select", title: "Example lyrics" }, HTML.option({ value: "" }, "Examples..."), ...LYRIC_EXAMPLES.map((ex, i) => HTML.option({ value: String(i) }, ex[0])));
@@ -663,24 +836,44 @@
                 mapBox.appendChild(HTML.span({ class: "cb-utawa-bar" }, "Bar " + (b + 1)));
                 let index = noteCount(song, ch, b);
                 const notes = pattern.notes.slice().sort((x, y) => x.start - y.start);
+                const basePitch = A.Config.keys[song.key].basePitch;
                 for (const note of notes) {
                     const k = list.length ? (p.wrap !== false ? index % list.length : index) : -1;
-                    const syl = k >= 0 && k < list.length ? list[k] : null;
+                    const own = p.noteLyrics[index];
+                    const syl = own ? (parseLyrics(String(own), p.lang | 0, false)[0] || null) : (k >= 0 && k < list.length ? list[k] : null);
                     const label = syl ? (syl.melisma ? "-" : syl.rest ? "(rest)" : syl.text) : "ah";
-                    mapBox.appendChild(HTML.span({ class: "cb-utawa-chip" + (b == currentBar ? " cb-now" : "") + (syl && syl.rest ? " cb-rest" : "") }, label, HTML.small(String(index + 1))));
+                    const noteIndex = index;
+                    const chip = HTML.span({ class: "cb-utawa-chip" + (b == currentBar ? " cb-now" : "") + (syl && syl.rest ? " cb-rest" : "") + (own ? " cb-edited" : ""), title: "Note " + (index + 1) + (syl && syl.ph.length ? ": " + syl.ph.map(x => x.replace("hum:", "")).join(" ") : "") + ". Click to type this note's lyric." }, HTML.em(A.flMidiName(basePitch + note.pitches[0])), label, HTML.small(String(index + 1)));
+                    chip.addEventListener("click", () => editNote(noteIndex, own || (syl && !syl.melisma && !syl.rest ? syl.text.replace(/\(\d+\)$/, "") : syl ? syl.text : "")));
+                    mapBox.appendChild(chip);
                     index++;
                     shown++;
                 }
             }
             if (!mapBox.firstChild) mapBox.appendChild(HTML.span({ class: "cb-hint" }, "Add notes to this channel and each one will sing the next syllable."));
+            const edits = Object.keys(p.noteLyrics).length;
+            clearEdits.style.display = edits > 0 ? "" : "none";
+            clearEdits.textContent = "Clear " + edits + " note lyric" + (edits == 1 ? "" : "s");
         }
+        // Types the lyric for one note (like editing a note's lyric in a vocal editor).
+        async function editNote(index, current) {
+            const text = await CarrotUI.ask({ title: "Lyric for note " + (index + 1), value: current, hint: "One syllable or word (in the lyric language). - holds the previous vowel, . is silent, [l ah] spells phonemes. Leave empty to use the lyrics text again." });
+            if (text == null) return;
+            const p = getP();
+            const clean = text.trim();
+            if (clean) p.noteLyrics[index] = clean.slice(0, 40);
+            else delete p.noteLyrics[index];
+            host.changed(true);
+            updateMap();
+        }
+        const clearEdits = CarrotUI.button("Clear note lyrics", () => { getP().noteLyrics = {}; host.changed(true); updateMap(); }, { title: "Remove the lyrics typed on single notes" });
         const testButton = CarrotUI.button("Sing a test phrase", () => {
             const pitches = [24, 26, 28, 31, 28, 26, 24];
             pitches.forEach((pitch, k) => setTimeout(() => host.previewNote(pitch, 0.32), k * 360));
         }, { title: "Sings the next few syllables on the plugin keyboard" });
         const lyricsTab = HTML.div(
             CarrotUI.section("Lyrics", lyrics, CarrotUI.row(langSelect, examples, splitToggle, wrapToggle, testButton), phLine),
-            CarrotUI.section("Which note sings what (current bar highlighted)", mapBox, mapInfo),
+            CarrotUI.section("Which note sings what (click a note to change its lyric)", mapBox, CarrotUI.row(mapInfo, clearEdits)),
             CarrotUI.hint("Syllables are separated by spaces or hyphens. A lone - holds the previous vowel over another note (melisma), . makes a silent note, and [l ah v] spells phonemes: a ae ah aw e er ih i uh u o ai ei oi au ou, m n ng l r w y p b t d k g f v s z sh zh th dh h ch j ts."));
         // ---- voice tab
         const voiceSelect = HTML.select({ class: "cb-select", title: "Voice preset" }, HTML.option({ value: "" }, "Choose a voice..."), ...VOICES.map((v, i) => HTML.option({ value: String(i) }, v.name)));
@@ -690,20 +883,37 @@
             voiceSelect.selectedIndex = 0;
             if (!voice) return;
             const p = getP();
-            Object.assign(p, { robot: false, release: 0.12, detune: 10, vibDelay: 0.28, fall: 0.6, drift: 0.5 }, voice.params);
+            Object.assign(p, { robot: false, release: 0.12, detune: 10, vibDelay: 0.28, fall: 0.6, drift: 0.5, clearness: 0.5, portamento: 0.45 }, voice.params, { voiceName: voice.name });
             host.replaceParams(p);
             A.flToast("Voice: " + voice.name);
         });
+        // ---- voice bank header (always visible)
+        const bankAvatar = HTML.div({ class: "cb-utawa-avatar" });
+        const bankName = HTML.div({ class: "cb-utawa-bank-name" });
+        const bankSub = HTML.div({ class: "cb-utawa-bank-sub" });
+        const bankPick = HTML.select({ class: "cb-select cb-utawa-bank-pick", title: "Change voice" }, HTML.option({ value: "" }, "Change voice..."), ...VOICES.map((v, i) => HTML.option({ value: String(i) }, v.name)));
+        bankPick.addEventListener("keydown", (e) => e.stopPropagation());
+        bankPick.addEventListener("change", () => { voiceSelect.value = bankPick.value; bankPick.selectedIndex = 0; voiceSelect.dispatchEvent(new Event("change")); });
+        function updateBank() {
+            const p = getP();
+            const name = p.voiceName || "Custom voice";
+            bankAvatar.textContent = name.trim()[0] || "U";
+            bankName.textContent = name;
+            const gender = p.formant < 0.98 ? "deep" : p.formant > 1.24 ? "young" : p.formant > 1.06 ? "female" : "male";
+            bankSub.textContent = LANGUAGES[p.lang | 0] + " · " + gender + " · " + (p.unison > 1 ? Math.round(p.unison) + " singers" : "solo") + (p.robot ? " · robot" : "");
+        }
+        const bank = HTML.div({ class: "cb-utawa-bank" }, bankAvatar, HTML.div(bankName, bankSub), bankPick);
         const pct = (v) => Math.round(v * 100) + "%";
         const voiceTab = HTML.div(
             CarrotUI.section("Voice", CarrotUI.row(voiceSelect, host.toggle("robot", { label: "Robot (snap pitch)", def: false }))),
-            CarrotUI.section("Tone", CarrotUI.row(
-                host.knob("formant", { label: "Gender", min: 0.75, max: 1.45, def: 1.16, format: v => v < 0.98 ? "Deep" : v > 1.24 ? "Young" : v > 1.06 ? "Female" : "Male", title: "Formant shift: lower is a larger (male) voice, higher a smaller (female / young) one" }),
-                host.knob("breath", { label: "Breath", min: 0, max: 1, def: 0.16, format: pct }),
-                host.knob("tension", { label: "Tension", min: 0, max: 1, def: 0.55, format: pct, title: "Soft and dark to bright and pressed" }),
+            CarrotUI.section("Voice parameters", CarrotUI.row(
+                host.knob("formant", { label: "GEN Gender", min: 0.75, max: 1.45, def: 1.16, format: v => v < 0.98 ? "Deep" : v > 1.24 ? "Young" : v > 1.06 ? "Female" : "Male", title: "Gender factor (formant shift): lower is a larger (male) voice, higher a smaller (female / young) one" }),
+                host.knob("breath", { label: "BRE Breath", min: 0, max: 1, def: 0.16, format: pct, title: "Breathiness" }),
+                host.knob("tension", { label: "BRI Bright", min: 0, max: 1, def: 0.55, format: pct, title: "Brightness: soft and dark to bright and pressed" }),
+                host.knob("clearness", { label: "CLE Clear", min: 0, max: 1, def: 0.5, format: pct, title: "Clearness: airy and soft to clear and ringing" }),
                 host.knob("growl", { label: "Growl", min: 0, max: 1, def: 0, format: pct }),
-                host.knob("volume", { label: "Volume", min: 0, max: 1.2, def: 0.8, format: pct }),
-                host.knob("dynamics", { label: "Velocity", min: 0, max: 1, def: 0.55, format: pct, title: "How much note volume changes the voice's level" }))),
+                host.knob("dynamics", { label: "DYN Velocity", min: 0, max: 1, def: 0.55, format: pct, title: "Dynamics: how much note volume changes the voice's level" }),
+                host.knob("volume", { label: "Volume", min: 0, max: 1.2, def: 0.8, format: pct }))),
             CarrotUI.section("Choir", CarrotUI.row(
                 host.knob("unison", { label: "Singers", min: 1, max: 8, step: 1, def: 1, format: v => String(Math.round(v)) }),
                 host.knob("detune", { label: "Spread", min: 0, max: 40, def: 10, format: v => Math.round(v) + "c" }))));
@@ -713,8 +923,11 @@
                 host.knob("vibDepth", { label: "Depth", min: 0, max: 1.2, def: 0.32, format: v => v.toFixed(2) + " st" }),
                 host.knob("vibRate", { label: "Rate", min: 3, max: 8, def: 5.6, format: v => v.toFixed(1) + " Hz" }),
                 host.knob("vibDelay", { label: "Delay", min: 0, max: 1, def: 0.28, format: v => Math.round(v * 1000) + " ms" }))),
+            CarrotUI.section("Note transitions", CarrotUI.row(
+                host.knob("portamento", { label: "POR Glide", min: 0, max: 1, def: 0.45, format: v => Math.round(30 + v * 220) + " ms", title: "Portamento: how long the voice slides from the previous note's pitch" }),
+                host.toggle("legato", { label: "Legato joins", def: true, title: "Notes that touch the next note skip the fall and fade quickly into it" }))),
             CarrotUI.section("Pitch", CarrotUI.row(
-                host.knob("scoop", { label: "Scoop", min: 0, max: 4, def: 1.1, format: v => v.toFixed(1) + " st", title: "Slides up into each note from below" }),
+                host.knob("scoop", { label: "Scoop", min: 0, max: 4, def: 1.1, format: v => v.toFixed(1) + " st", title: "Slides up into a note that starts a phrase" }),
                 host.knob("fall", { label: "Fall", min: 0, max: 3, def: 0.6, format: v => v.toFixed(1) + " st", title: "Drops at the end of each note" }),
                 host.knob("drift", { label: "Drift", min: 0, max: 1, def: 0.5, format: pct, title: "Small natural pitch wander" }))),
             CarrotUI.section("Timing", CarrotUI.row(
@@ -722,6 +935,7 @@
                 host.knob("release", { label: "Release", min: 0.03, max: 0.6, def: 0.12, format: v => Math.round(v * 1000) + " ms" }))));
         const fxTab = HTML.div(CarrotUI.section("Effects", carrotFxRack(host, "fx", { max: 6 })));
         const tabs = CarrotUI.tabs([["Lyrics", lyricsTab], ["Voice", voiceTab], ["Expression", expressionTab], ["Effects", fxTab]], () => setTimeout(() => redraws.forEach(f => f()), 0));
+        root.appendChild(bank);
         root.appendChild(tabs);
         host.onRefresh(() => {
             const p = getP();
@@ -730,8 +944,10 @@
             splitToggle.setValue(p.autoSplit !== false);
             wrapToggle.setValue(p.wrap !== false);
             updateMap();
+            updateBank();
         });
         updateMap();
+        updateBank();
         return root;
     }
 
@@ -739,11 +955,11 @@
         id: "utawa",
         width: 700,
         defaultParams: defaults,
-        presets: VOICES.map(v => ({ name: v.name, params: Object.assign(defaults(), v.params) })),
+        presets: VOICES.map(v => ({ name: v.name, params: Object.assign(defaults(), v.params, { voiceName: v.name }) })),
         randomize: (p) => {
             fill(p);
             const r = () => Math.random();
-            Object.assign(p, { formant: 0.85 + r() * 0.5, breath: r() * 0.5, tension: 0.3 + r() * 0.6, growl: r() < 0.3 ? r() * 0.4 : 0, vibDepth: r() * 0.6, vibRate: 4.5 + r() * 2.5, scoop: r() * 2, fall: r() * 1.2 });
+            Object.assign(p, { formant: 0.85 + r() * 0.5, breath: r() * 0.5, tension: 0.3 + r() * 0.6, clearness: 0.2 + r() * 0.7, growl: r() < 0.3 ? r() * 0.4 : 0, vibDepth: r() * 0.6, vibRate: 4.5 + r() * 2.5, scoop: r() * 2, fall: r() * 1.2, portamento: r(), voiceName: "Random voice" });
             return p;
         },
         createVoice,
@@ -753,5 +969,6 @@
         buildEditor,
         // exposed for tests and other tools
         parseLyrics,
+        languages: LANGUAGES,
     });
 })();

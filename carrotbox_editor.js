@@ -16281,6 +16281,15 @@ FLKitLibrary._loadPromise = null;
                     // position of this note in the channel (song order), e.g. for lyrics; null for live / preview notes
                     noteIndex: (tone.note != null && ctx.channelIndex != undefined) ? FLSynth.noteOrderIndex(song, ctx.channelIndex, synth.bar, tone.note) : null,
                 };
+                // The notes around this one (for glides and legato): pitch change from
+                // the previous note in semitones, and the gaps in seconds (null = none).
+                if (tone.note != null && ctx.channelIndex != undefined && !ctx.isNoiseChannel) {
+                    const near = FLSynth.noteNeighbors(song, ctx.channelIndex, synth.bar, tone.note);
+                    const secondsPerPart = 60 / (Config.partsPerBeat * Math.max(1, song.tempo));
+                    info.prevDelta = near.prev ? near.delta : null;
+                    info.prevGap = near.prev ? near.prevGap * secondsPerPart : null;
+                    info.nextGap = near.next ? near.nextGap * secondsPerPart : null;
+                }
                 try {
                     tone.flVoice = plugin.createVoice(settings.params, info);
                 }
@@ -16336,6 +16345,47 @@ FLKitLibrary._loadPromise = null;
                 }
             }
             return count;
+        }
+        static noteNeighbors(song, channelIndex, bar, note) {
+            const result = { prev: null, next: null, delta: 0, prevGap: 0, nextGap: 0 };
+            const barLength = song.beatsPerBar * Config.partsPerBeat;
+            const pattern = song.getPattern(channelIndex, bar);
+            if (!pattern)
+                return result;
+            let prev = null, next = null, prevOffset = 0, nextOffset = 0;
+            for (const other of pattern.notes) {
+                if (other == note)
+                    continue;
+                if (other.start < note.start && (prev == null || other.start > prev.start))
+                    prev = other;
+                if (other.start >= note.end && (next == null || other.start < next.start))
+                    next = other;
+            }
+            if (!prev && bar > 0) {
+                const before = song.getPattern(channelIndex, bar - 1);
+                if (before && before.notes.length > 0) {
+                    prev = before.notes[before.notes.length - 1];
+                    prevOffset = -barLength;
+                }
+            }
+            if (!next && bar + 1 < song.barCount) {
+                const after = song.getPattern(channelIndex, bar + 1);
+                if (after && after.notes.length > 0) {
+                    next = after.notes[0];
+                    nextOffset = barLength;
+                }
+            }
+            if (prev) {
+                const endPitch = prev.pitches[0] + prev.pins[prev.pins.length - 1].interval;
+                result.prev = prev;
+                result.delta = note.pitches[0] - endPitch;
+                result.prevGap = note.start - (prev.end + prevOffset);
+            }
+            if (next) {
+                result.next = next;
+                result.nextGap = (next.start + nextOffset) - note.end;
+            }
+            return result;
         }
         static pluginSynth(synth, bufferIndex, runLength, tone, instrumentState) {
             const voice = tone.flVoice;
@@ -17062,7 +17112,7 @@ FLKitLibrary._loadPromise = null;
             blurb: "Sketch ideas fast: draw a melody line and it snaps to your scale, build chord progressions, bass lines and arps, then drop them straight into patterns.",
         },
         {
-            id: "utawa", name: "Utawa", kind: "instrument", file: "plugins/utawa.js", alt: "VOCALOID 6", icon: "Ut", color: "#ff7eb6", sizeKB: 49,
+            id: "utawa", name: "Utawa", kind: "instrument", file: "plugins/utawa.js", alt: "VOCALOID 6", icon: "Ut", color: "#ff7eb6", sizeKB: 65,
             blurb: "Singing synthesizer: type lyrics (English or Japanese romaji) and every note sings the next syllable, with consonants, vowels, vibrato, scoops, breath, choir unison and nine voice presets.",
         },
         {

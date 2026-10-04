@@ -133,6 +133,15 @@ function check(label, ok, detail) {
 		return { total: lib.length, checked, bad, sounds: beepbox.FLSoundFactory.getCatalog().length };
 	});
 	check("Live Loops library renders (" + loops.total + " loops)", loops.total >= 1200 && loops.bad == 0, JSON.stringify(loops));
+
+	// ---- Utawa lyrics in every language
+	const lyrics = await page.evaluate(() => {
+		const plugin = beepbox.CarrotPlugins.get("utawa");
+		const join = (text, lang) => plugin.parseLyrics(text, lang, true).map(s => s.ph.join(" ")).join(" | ");
+		return { en: join("hello night", 0), ja: join("ko n ni chi wa", 1), es: join("perro corazon", 2), zh: join("ni hao xue", 3) };
+	});
+	check("Utawa parses English, Japanese, Spanish and Chinese lyrics",
+		lyrics.en == "h e | l ou | n ai t" && lyrics.ja == "k o | hum:n | n i | ch i | w a" && lyrics.es == "p e | rr o | k o | jr a | s o n" && lyrics.zh == "n i | h au | sh ue e", JSON.stringify(lyrics));
 	check("sound library has over 2,600 sounds", loops.sounds >= 2600, String(loops.sounds));
 
 	// ---- FL Studio interface mode turns on and off cleanly

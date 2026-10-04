@@ -27,7 +27,7 @@
             blurb: "Sketch ideas fast: draw a melody line and it snaps to your scale, build chord progressions, bass lines and arps, then drop them straight into patterns.",
         },
         {
-            id: "utawa", name: "Utawa", kind: "instrument", file: "plugins/utawa.js", alt: "VOCALOID 6", icon: "Ut", color: "#ff7eb6", sizeKB: 49,
+            id: "utawa", name: "Utawa", kind: "instrument", file: "plugins/utawa.js", alt: "VOCALOID 6", icon: "Ut", color: "#ff7eb6", sizeKB: 65,
             blurb: "Singing synthesizer: type lyrics (English or Japanese romaji) and every note sings the next syllable, with consonants, vowels, vibrato, scoops, breath, choir unison and nine voice presets.",
         },
         {
