@@ -12,15 +12,33 @@
     // ======================================================================
     const CFL_CSS = `
 html.carrot-fl {
+	--cfl-top-h: 62px;
 	--cfl-bg: #2e363a; --cfl-panel: #3a4449; --cfl-panel2: #434e54; --cfl-dark: #232a2e; --cfl-line: #1c2225;
 	--cfl-text: #d3dadd; --cfl-dim: #8e9ba1; --cfl-orange: #f39d38; --cfl-green: #9be36b; --cfl-lcd: #a9f56b; --cfl-lcd-bg: #182023;
 	--page-margin: #22292c;
 	background: #22292c;
 }
-html.carrot-fl body { margin: 0; padding-top: 62px; display: block; font-family: "Segoe UI", Tahoma, Verdana, Arial, sans-serif; }
+html.carrot-fl body { margin: 0; padding-top: var(--cfl-top-h); display: block; font-family: "Segoe UI", Tahoma, Verdana, Arial, sans-serif; }
 html.carrot-fl #text-content { display: none; }
-html.carrot-fl #beepboxEditorContainer { max-width: none !important; width: 100%; height: calc(100vh - 62px); padding: 0 6px; box-sizing: border-box; overflow: hidden; }
-html.carrot-fl .beepboxEditor { width: 100% !important; height: calc(100vh - 68px) !important; font-size: 12px; font-family: "Segoe UI", Tahoma, Verdana, Arial, sans-serif; }
+html.carrot-fl #beepboxEditorContainer { max-width: none !important; width: 100%; height: calc(100vh - var(--cfl-top-h)); padding: 0 6px; box-sizing: border-box; overflow: hidden; }
+html.carrot-fl .beepboxEditor { width: 100% !important; height: calc(100vh - var(--cfl-top-h) - 6px) !important; font-size: 12px; font-family: "Segoe UI", Tahoma, Verdana, Arial, sans-serif; }
+/* one roomy settings column: song settings, then the instrument */
+@media (min-width: 711px) {
+	html.carrot-fl .beepboxEditor:not(.fl-view) { grid-template-columns: minmax(0, 1fr) 300px !important; }
+	html.carrot-fl .beepboxEditor.fl-view { grid-template-columns: max-content minmax(0, 1fr) 300px !important; }
+	html.carrot-fl .beepboxEditor .settings-area {
+		width: 300px !important; box-sizing: border-box; display: grid !important;
+		grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: auto minmax(0, 1fr) !important;
+		grid-template-areas: "song-settings-area" "instrument-settings-area" !important;
+		gap: 8px; padding: 8px 8px 10px !important;
+	}
+	html.carrot-fl .beepboxEditor .instrument-settings-area > .editor-controls { position: static !important; }
+	html.carrot-fl .beepboxEditor .song-settings-area, html.carrot-fl .beepboxEditor .instrument-settings-area {
+		background: var(--cfl-panel2); border: 1px solid #2a3236; border-radius: 3px; padding: 6px 8px !important; overflow: visible !important;
+	}
+}
+html.carrot-fl .beepboxEditor .selectRow { min-height: 28px; gap: 8px; }
+html.carrot-fl .beepboxEditor .selectRow > span:first-child, html.carrot-fl .beepboxEditor .selectRow > .tip { flex: 0 0 auto; margin-right: 6px; }
 html.carrot-fl .beepboxEditor .version-area,
 html.carrot-fl .beepboxEditor .play-pause-area,
 html.carrot-fl .beepboxEditor .menu-area { display: none !important; }
@@ -47,12 +65,15 @@ html.carrot-fl .prompt { background: var(--cfl-panel) !important; border: 1px so
 /* the top bar */
 .cfl-top { display: none; }
 html.carrot-fl .cfl-top {
-	overflow-x: auto; overflow-y: hidden;
-	display: flex; position: fixed; top: 0; left: 0; right: 0; height: 62px; z-index: 40; box-sizing: border-box;
+	display: flex; flex-wrap: wrap; position: fixed; top: 0; left: 0; right: 0; min-height: 62px; z-index: 40; box-sizing: border-box;
 	background: linear-gradient(#4d585e, #3a4348); border-bottom: 1px solid #161b1e; color: var(--cfl-text);
-	font: 12px "Segoe UI", Tahoma, Verdana, Arial, sans-serif; align-items: stretch; gap: 6px; padding: 3px 6px; user-select: none;
+	font: 12px "Segoe UI", Tahoma, Verdana, Arial, sans-serif; align-items: stretch; gap: 4px 8px; padding: 4px 8px; user-select: none;
 }
-.cfl-col { display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
+/* groups keep their size; when the window is narrow the bar wraps onto a second row */
+.cfl-top > * { flex: none; }
+.cfl-col { display: flex; flex-direction: column; justify-content: space-between; gap: 3px; }
+@media (max-width: 1280px) { html.carrot-fl .cfl-cpu { display: none; } html.carrot-fl .cfl-hint { width: 230px; } }
+@media (max-width: 980px) { html.carrot-fl .cfl-hint { display: none; } html.carrot-fl .cfl-lcd .cfl-big { font-size: 16px; } }
 .cfl-menus { display: flex; gap: 1px; }
 .cfl-menus button { background: transparent !important; border: none !important; box-shadow: none !important; color: #c8d1d5 !important; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; padding: 2px 6px; border-radius: 2px !important; }
 .cfl-menus button:hover, .cfl-menus button.cfl-open { background: rgba(255,255,255,0.12) !important; color: #fff !important; }
@@ -339,6 +360,17 @@ html.carrot-fl .cfl-top {
             CarrotFLStudio._windowButtons = windowButtons;
             top.appendChild(HTML.div({ class: "cfl-group cfl-windows", style: "margin-left: auto;" }, ...Object.values(windowButtons)));
             document.body.insertBefore(top, document.body.firstChild);
+            // the page starts below the bar, however many rows it wraps onto
+            const fit = () => {
+                if (!top.isConnected)
+                    return;
+                const h = Math.max(62, Math.ceil(top.getBoundingClientRect().height));
+                document.documentElement.style.setProperty("--cfl-top-h", h + "px");
+            };
+            if (typeof ResizeObserver == "function")
+                new ResizeObserver(fit).observe(top);
+            window.addEventListener("resize", fit);
+            setTimeout(fit, 0);
             // FL's hint bar: shows what the control under the mouse does
             document.addEventListener("mouseover", (event) => {
                 if (!CarrotFLStudio.on)

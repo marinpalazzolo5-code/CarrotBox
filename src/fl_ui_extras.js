@@ -183,7 +183,8 @@
 .carrot-rec-button.cb-recording { background: #e0344d !important; color: white !important; animation: carrot-pulse 1s infinite; }
 @keyframes carrot-pulse { 50% { opacity: 0.65; } }
 .carrot-seed { display: flex; flex-direction: column; gap: 2px; align-items: stretch; }
-.carrot-kitgen-pads { display: grid; grid-template-columns: 1fr; gap: 3px; max-height: 340px; overflow: auto; }
+.beepboxEditor .customize-instrument { padding-left: calc(var(--button-size, 26px) + 4px) !important; padding-right: 6px !important; }
+.carrot-kitgen-pads { display: grid; grid-template-columns: 1fr; gap: 3px; max-height: min(450px, 52vh); overflow: auto; }
 .carrot-kitgen-row { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 6px; background: rgba(127,127,127,0.08); }
 .carrot-kitgen-label { flex: 0 0 104px; font-size: 11px; opacity: 0.75; }
 .carrot-kitgen-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
@@ -222,7 +223,14 @@ html.carrot-modern .beepboxEditor .instrument-settings-area {
 	margin-bottom: 8px;
 	box-shadow: 0 4px 16px rgba(0,0,0,0.18);
 }
-html.carrot-modern .beepboxEditor .settings-area { padding-left: 4px; }
+html.carrot-modern .beepboxEditor .settings-area { padding-left: 6px; }
+html.carrot-modern .beepboxEditor .play-pause-area, html.carrot-modern .beepboxEditor .menu-area { display: flex; flex-direction: column; gap: 6px; }
+html.carrot-modern .beepboxEditor .song-settings-area, html.carrot-modern .beepboxEditor .instrument-settings-area { padding: 10px 10px 8px !important; }
+html.carrot-modern .beepboxEditor .selectRow { min-height: 30px; gap: 8px; }
+html.carrot-modern .beepboxEditor .selectRow + .selectRow { margin-top: 2px; }
+html.carrot-modern .beepboxEditor .editor-controls > * + * { margin-top: 2px; }
+html.carrot-modern .beepboxEditor .menu-area .selectContainer, html.carrot-modern .beepboxEditor .menu-area button { min-height: 30px; }
+html.carrot-modern .beepboxEditor .fl-icon-row, html.carrot-modern .beepboxEditor .fl-icon-buttons { gap: 6px !important; }
 html.carrot-modern .beepboxEditor .pattern-area, html.carrot-modern .beepboxEditor .track-area { border-radius: 14px; }
 html.carrot-modern .beepboxEditor .trackContainer, html.carrot-modern .beepboxEditor .fl-playlist, html.carrot-modern .beepboxEditor .fl-browser { border-radius: 12px; }
 html.carrot-modern .beepboxEditor .tip { text-decoration: none; opacity: 0.9; }
@@ -240,6 +248,10 @@ html.carrot-modern .beepboxEditor .version-area div, html.carrot-modern .beepbox
 	-webkit-background-clip: text; background-clip: text; color: transparent;
 }
 html.carrot-modern .beepboxEditor .fl-icon-button { border-radius: 10px; }
+html.carrot-modern .cb-window-body { padding: 12px 14px; }
+html.carrot-modern .cb-section { border-radius: 10px; padding: 8px 12px 10px; margin-bottom: 10px; }
+html.carrot-modern .cb-row { gap: 8px 12px; }
+html.carrot-modern .beepboxEditor .customize-instrument { font-size: 12px; white-space: nowrap; }
 html.carrot-modern .cb-window { border-radius: 14px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 18px 60px rgba(0,0,0,0.6); }
 html.carrot-modern .cb-launcher { border-radius: 16px; }
 html.carrot-modern .fl-toast { border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.4); }

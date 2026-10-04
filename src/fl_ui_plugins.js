@@ -52,7 +52,7 @@
 	line-height: 22px;
 }
 .cb-window-title button:hover, .cb-mini-button:hover { background: ${ColorConfig.uiWidgetFocus}; }
-.cb-window-body { overflow: auto; padding: 8px; flex: 1; min-height: 0; }
+.cb-window-body { overflow: auto; padding: 10px 12px; flex: 1; min-height: 0; }
 .cb-window.cb-collapsed .cb-window-body, .cb-window.cb-collapsed .cb-keys { display: none; }
 .cb-keys {
 	position: relative;
@@ -70,8 +70,8 @@
 .cb-section {
 	border: 1px solid ${ColorConfig.uiWidgetBackground};
 	border-radius: 6px;
-	padding: 4px 6px 6px;
-	margin: 0 0 6px 0;
+	padding: 6px 10px 9px;
+	margin: 0 0 8px 0;
 	background: rgba(127,127,127,0.04);
 }
 .cb-section-title {
@@ -79,15 +79,15 @@
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
 	color: ${ColorConfig.secondaryText};
-	margin-bottom: 3px;
+	margin-bottom: 6px;
 	display: flex;
 	align-items: center;
 	gap: 6px;
 }
 .cb-section-title .cb-grow { flex: 1; }
-.cb-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px 6px; }
+.cb-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 7px 10px; }
 .cb-row.cb-center { align-items: center; }
-.cb-cols { display: grid; gap: 6px; }
+.cb-cols { display: grid; gap: 8px; }
 .cb-knob {
 	display: flex;
 	flex-direction: column;
@@ -106,9 +106,9 @@
 .cb-knob-value { font-size: 10px; color: ${ColorConfig.primaryText}; white-space: nowrap; min-height: 12px; }
 .cb-knob.cb-small { width: 42px; }
 .cb-knob.cb-small svg { width: 26px; height: 26px; }
-.cb-field { display: flex; flex-direction: column; gap: 1px; font-size: 10px; color: ${ColorConfig.secondaryText}; }
+.cb-field { display: flex; flex-direction: column; gap: 3px; font-size: 10px; color: ${ColorConfig.secondaryText}; }
 .cb-field select, .cb-select {
-	height: 22px;
+	height: 24px;
 	font-size: 11px;
 	background: ${ColorConfig.uiWidgetBackground};
 	color: ${ColorConfig.primaryText};
@@ -117,8 +117,8 @@
 	padding: 0 4px;
 }
 .cb-toggle {
-	height: 22px;
-	padding: 0 8px;
+	height: 24px;
+	padding: 0 10px;
 	border: none;
 	border-radius: 4px;
 	background: ${ColorConfig.uiWidgetBackground};
@@ -128,8 +128,8 @@
 }
 .cb-toggle.cb-on { background: var(--cb-plugin-color, ${ColorConfig.loopAccent}); color: #111; }
 .cb-button {
-	height: 24px;
-	padding: 0 10px;
+	height: 26px;
+	padding: 0 12px;
 	border: none;
 	border-radius: 4px;
 	background: ${ColorConfig.uiWidgetBackground};
@@ -1936,7 +1936,20 @@
             const query = this._input.value.trim().toLowerCase();
             if (!query)
                 return this._items;
-            return this._items.filter(item => item.group != "Recently used" && (item.name + " " + item.sub + " " + item.badge).toLowerCase().indexOf(query) != -1);
+            // every word must match; names that start with or contain the words come first
+            const words = query.split(/\s+/).filter(w => w);
+            const scored = [];
+            this._items.forEach((item, order) => {
+                if (item.group == "Recently used")
+                    return;
+                const name = item.name.toLowerCase(), all = (item.name + " " + item.sub + " " + item.badge).toLowerCase();
+                if (!words.every(w => all.indexOf(w) != -1))
+                    return;
+                const score = name.startsWith(query) ? 0 : name.indexOf(query) != -1 ? 1 : words.every(w => name.indexOf(w) != -1) ? 2 : (item.sub || "").toLowerCase().indexOf(query) != -1 ? 3 : 4;
+                scored.push({ item, score, order });
+            });
+            scored.sort((a, b) => a.score - b.score || a.order - b.order);
+            return scored.map(x => x.item);
         }
         _render() {
             const items = this._filtered();
@@ -1944,9 +1957,12 @@
             let group = null;
             if (items.length == 0)
                 this._list.appendChild(HTML.div({ class: "cb-hint", style: "padding: 12px;" }, "Nothing matches. Install more plugins in the Plugin Manager."));
+            const searching = this._input.value.trim() != "";
             items.forEach((item, index) => {
-                if (item.group != group) {
-                    group = item.group;
+                // while searching the list is ranked, so it gets one header instead of one per group
+                const label = searching ? "Best matches" : item.group;
+                if (label != group) {
+                    group = label;
                     this._list.appendChild(HTML.div({ class: "cb-launcher-group" }, group));
                 }
                 const row = HTML.div({ class: "cb-launcher-item" + (index == this._selected ? " cb-selected" : "") }, HTML.div({ class: "cb-launcher-icon", style: `background: ${item.color};` }, item.icon), HTML.div({ class: "cb-launcher-text" }, HTML.b(item.name), HTML.span(item.sub)), HTML.span({ class: "cb-badge" }, item.badge));
