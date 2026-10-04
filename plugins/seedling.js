@@ -5,7 +5,7 @@
  * texture, filter and envelope. The plant view shows twelve branches of
  * mutations around the current sound - drag through them to explore, press
  * Plant to make the current sound the new root and grow new branches from it.
- * Genes can be edited directly, and Genopatch evolves a patch that imitates
+ * Genes can be edited directly, and "Grow from sample" evolves a patch that imitates
  * any sample you give it.
  *
  * Instrument plugin: every note creates one voice (see createVoice/render).
@@ -16,6 +16,21 @@
     if (!B || !B.CarrotPlugins) return;
     const A = B.CarrotAPI;
     const { HTML, CarrotUI, CarrotFX, CarrotDSP, CarrotADSR, CarrotSVF, CarrotDelayLine, FLSampleBank, carrotFxRack, flToast } = A;
+
+    // ---- window skin: dark soil, soft rounded panels, lower-case labels (Synplant-like)
+    A.addStyle(`
+.cb-window.cb-plugin-seedling { --cb-plugin-color: #8ee28e; }
+.cb-plugin-seedling .cb-window-body { background: radial-gradient(circle at 30% 35%, #1e2c20 0%, #121a13 55%, #0b0f0c 100%) !important; color: #cfe3cf; }
+.cb-plugin-seedling .cb-tabs { display: flex; gap: 4px; border: none; margin-bottom: 8px; }
+.cb-plugin-seedling .cb-tab { text-transform: lowercase; font-size: 12px; padding: 4px 14px; border-radius: 14px; border: 1px solid rgba(142,226,142,0.2); background: rgba(20,32,22,0.6); color: #9cc59c; }
+.cb-plugin-seedling .cb-tab.cb-on { background: rgba(142,226,142,0.18); color: #d9f5d9; border-color: rgba(142,226,142,0.55); }
+.cb-window.cb-plugin-seedling .cb-section { background: rgba(18,28,20,0.72) !important; border: 1px solid rgba(142,226,142,0.16) !important; border-radius: 14px !important; }
+.cb-window.cb-plugin-seedling .cb-section-title { text-transform: lowercase; letter-spacing: 0.04em; font-size: 12px; color: #a8dca8 !important; }
+.cb-plugin-seedling .cb-button { border-radius: 14px; }
+.cb-plugin-seedling .cb-canvas { border-radius: 12px; }
+.cb-plugin-seedling .cb-knob .cb-track { stroke: rgba(142,226,142,0.14); }
+.cb-plugin-seedling .cb-knob-label { text-transform: lowercase; font-size: 11px; color: #9cc59c; }
+`);
 
     const GENES = 20;
     const BRANCHES = 12;
@@ -255,7 +270,7 @@
         if (!(Math.abs(voice.noiseLP) < 1e6)) voice.noiseLP = 0;
         if (voice.released && voice.amp.done) voice.done = true;
     }
-    // Renders one note offline (used by Genopatch).
+    // Renders one note offline (used by Grow from sample).
     function renderNote(dna, freq, seconds, sr, hold) {
         const params = { dna, tune: 0, level: 1 };
         const info = { freq, freqScale: 1, gate: true, params, sampleRate: sr, midi: 69 + 12 * Math.log2(freq / 440), velocity: 1, bpm: 120 };
@@ -326,7 +341,7 @@
         return p;
     }
 
-    // -------------------------------------------------------- Genopatch
+    // -------------------------------------------------------- grow from sample
     const FEATURE_BANDS = 20, FEATURE_FRAMES = 12, FFT_SIZE = 1024, GENO_RATE = 22050, GENO_SECONDS = 0.9, GENO_HOLD = 0.55;
     function featuresOf(pcm, sr) {
         const frames = [];
@@ -399,7 +414,7 @@
         const hz = CarrotDSP.detectPitch(mono, GENO_RATE, Math.min(mono.length - 2048, startSample + Math.floor(0.03 * GENO_RATE)), 4096);
         return { region, hz: hz && hz > 40 && hz < 2000 ? hz : null, features: featuresOf(region, GENO_RATE) };
     }
-    class Genopatch {
+    class SampleGrower {
         constructor(target, startDna, onProgress, onDone) {
             this.target = target;
             this.freq = target.hz || 220;
@@ -466,9 +481,11 @@
         const cx = w / 2, cy = h * 0.55;
         const R = Math.min(w / 2 - 22, h * 0.45 - 4);
         state.geom = { cx, cy, R };
-        // soil line + stem
-        ctx.strokeStyle = "rgba(255,255,255,0.05)";
+        // faint growth rings in the soil
+        ctx.strokeStyle = "rgba(160,220,160,0.05)";
+        ctx.setLineDash([2, 5]);
         for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.arc(cx, cy, R * i / 3, 0, Math.PI * 2); ctx.stroke(); }
+        ctx.setLineDash([]);
         ctx.lineCap = "round";
         const branchAngle = (k) => (k / BRANCHES) * Math.PI * 2 - Math.PI / 2;
         const current = params.pos || { a: 0, r: 0 };
@@ -476,33 +493,77 @@
         for (let k = 0; k < BRANCHES; k++) {
             const a = branchAngle(k);
             const ex = cx + Math.cos(a) * R, ey = cy + Math.sin(a) * R;
-            const bend = 0.18 * Math.sin(k * 1.7 + 0.6);
+            const bend = 0.22 * Math.sin(k * 1.7 + 0.6);
             const mx = cx + Math.cos(a + bend) * R * 0.55, my = cy + Math.sin(a + bend) * R * 0.55;
+            const c1x = cx + Math.cos(a - bend * 0.8) * R * 0.28, c1y = cy + Math.sin(a - bend * 0.8) * R * 0.28;
             const near = Math.max(0, 1 - Math.min(Math.abs(turn - k), Math.abs(turn - k - BRANCHES), Math.abs(turn - k + BRANCHES)));
-            ctx.beginPath();
-            ctx.moveTo(cx, cy);
-            ctx.quadraticCurveTo(mx, my, ex, ey);
-            ctx.strokeStyle = "rgba(123,216,143," + (0.22 + near * 0.55) + ")";
-            ctx.lineWidth = 2 + near * 2;
-            ctx.stroke();
-            // leaves
             const hue = (k / BRANCHES) * 300 + 90;
+            // the stem: a curved, tapering vine with a soft glow
+            ctx.save();
+            ctx.shadowColor = "hsla(" + hue + ", 70%, 60%, " + (0.25 + near * 0.5) + ")";
+            ctx.shadowBlur = 6 + near * 10;
+            for (const [width, alpha] of [[4.5 + near * 2.5, 0.16], [2.6 + near * 1.6, 0.35 + near * 0.3], [1.1, 0.6 + near * 0.35]]) {
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.bezierCurveTo(c1x, c1y, mx, my, ex, ey);
+                ctx.strokeStyle = "hsla(" + (110 + near * 20) + ", 55%, " + (48 + near * 18) + "%, " + alpha + ")";
+                ctx.lineWidth = width;
+                ctx.stroke();
+            }
+            ctx.restore();
+            // a curling tendril halfway along
+            const tx = (mx + ex) / 2, ty = (my + ey) / 2, side = k % 2 ? 1 : -1;
+            ctx.beginPath();
+            ctx.moveTo(tx, ty);
+            ctx.quadraticCurveTo(tx + Math.cos(a + side * 1.4) * 14, ty + Math.sin(a + side * 1.4) * 14, tx + Math.cos(a + side * 0.6) * 18, ty + Math.sin(a + side * 0.6) * 18);
+            ctx.strokeStyle = "hsla(120, 45%, 55%, " + (0.25 + near * 0.35) + ")";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            // a small leaf on the stem
+            const drawLeaf = (x, y, angle, size, fill) => {
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.rotate(angle);
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.quadraticCurveTo(size * 0.55, -size * 0.45, size, 0);
+                ctx.quadraticCurveTo(size * 0.55, size * 0.45, 0, 0);
+                ctx.fillStyle = fill;
+                ctx.fill();
+                ctx.restore();
+            };
+            drawLeaf((cx + mx) / 2 + (mx - cx) * 0.2, (cy + my) / 2 + (my - cy) * 0.2, a - side * 0.9, 10, "hsla(" + hue + ", 50%, 50%, 0.5)");
+            // the fruit at the end: the mutated sound, glowing when the handle is near
+            ctx.save();
+            ctx.shadowColor = "hsl(" + hue + ", 80%, 60%)";
+            ctx.shadowBlur = 4 + near * 16;
+            const g = ctx.createRadialGradient(ex - 2, ey - 2, 1, ex, ey, 8 + near * 4);
+            g.addColorStop(0, "hsl(" + hue + ", 80%, " + (72 + near * 12) + "%)");
+            g.addColorStop(1, "hsl(" + hue + ", 60%, " + (38 + near * 14) + "%)");
             ctx.beginPath();
             ctx.arc(ex, ey, 7 + near * 4, 0, Math.PI * 2);
-            ctx.fillStyle = "hsl(" + hue + ", 60%, " + (45 + near * 20) + "%)";
+            ctx.fillStyle = g;
             ctx.fill();
+            ctx.restore();
             ctx.beginPath();
-            ctx.arc(mx * 0.5 + ex * 0.5, my * 0.5 + ey * 0.5, 3.5, 0, Math.PI * 2);
-            ctx.fillStyle = "hsla(" + hue + ", 55%, 55%, 0.55)";
+            ctx.arc(mx * 0.5 + ex * 0.5, my * 0.5 + ey * 0.5, 3, 0, Math.PI * 2);
+            ctx.fillStyle = "hsla(" + hue + ", 55%, 60%, 0.6)";
             ctx.fill();
         }
-        // root
+        // the seed in the middle
+        ctx.save();
+        ctx.shadowColor = "rgba(240,220,150,0.7)";
+        ctx.shadowBlur = 14;
+        const seedFill = ctx.createRadialGradient(cx - 3, cy - 3, 1, cx, cy, 10);
+        seedFill.addColorStop(0, "#fff4cc");
+        seedFill.addColorStop(1, "#b89a52");
         ctx.beginPath();
-        ctx.arc(cx, cy, 9, 0, Math.PI * 2);
-        ctx.fillStyle = "#e8d9a8";
+        ctx.ellipse(cx, cy, 9, 11, 0.4, 0, Math.PI * 2);
+        ctx.fillStyle = seedFill;
         ctx.fill();
-        ctx.strokeStyle = "#7a6a3a";
-        ctx.lineWidth = 2;
+        ctx.restore();
+        ctx.strokeStyle = "#6e5b2c";
+        ctx.lineWidth = 1.5;
         ctx.stroke();
         // handle
         const hx = cx + Math.cos(current.a) * current.r * R, hy = cy + Math.sin(current.a) * current.r * R;
@@ -663,7 +724,7 @@
         host.onRefresh(() => { const dna = getP().dna; geneKnobs.forEach((k, i) => k && k.setValue(dna[i])); });
         geneTab.append(grid, CarrotUI.hint("These are the genes the synth is grown from. Editing a gene makes the edited sound the new root of the plant."));
 
-        // ---- Genopatch tab
+        // ---- grow-from-sample tab
         const targetHeat = HTML.canvas({ class: "cb-canvas cb-seed-heat" });
         const growHeat = HTML.canvas({ class: "cb-canvas cb-seed-heat" });
         const progressBar = HTML.div(HTML.div());
@@ -695,7 +756,7 @@
             state.growing = true;
             growButton.textContent = "Stop growing";
             const animate = () => { if (state.growing) { redrawPlant(); requestAnimationFrame(animate); } };
-            const job = new Genopatch(geno.target, getP().dna, (best, fraction) => {
+            const job = new SampleGrower(geno.target, getP().dna, (best, fraction) => {
                 progressBar.firstChild.style.width = Math.round(fraction * 100) + "%";
                 status.textContent = "Growing... generation " + Math.round(fraction * job.maxGenerations) + " of " + job.maxGenerations + " - match " + Math.max(0, Math.round(100 - best.score * 6)) + "%";
                 const pcm = renderNote(best.dna, job.freq, GENO_SECONDS, GENO_RATE, GENO_HOLD);
@@ -725,12 +786,12 @@
             animate();
             tick();
         }, { primary: true, title: "Evolve a patch that imitates the sample (takes a few seconds)" });
-        const genoTab = HTML.div(CarrotUI.section("Genopatch: imitate a sample", dropZone, CarrotUI.row(chooseButton, hearTarget, growButton), progressBar, status, CarrotUI.cols(2, targetHeat, growHeat)));
+        const genoTab = HTML.div(CarrotUI.section("Grow from sample: imitate a sound", dropZone, CarrotUI.row(chooseButton, hearTarget, growButton), progressBar, status, CarrotUI.cols(2, targetHeat, growHeat)));
 
         // ---- Effects tab
         const fxTab = HTML.div(CarrotUI.section("Effects", carrotFxRack(host, "fx", { max: 6 })));
 
-        const tabs = CarrotUI.tabs([["Plant", plantTab], ["Genes", geneTab], ["Genopatch", genoTab], ["Effects", fxTab]], () => setTimeout(() => redraws.forEach(f => f()), 0));
+        const tabs = CarrotUI.tabs([["Plant", plantTab], ["Genes", geneTab], ["Grow from sample", genoTab], ["Effects", fxTab]], () => setTimeout(() => redraws.forEach(f => f()), 0));
         host.onRefresh(() => redraws.forEach(f => f()));
         root.appendChild(tabs);
         root.addEventListener("remove", () => { if (state.job) state.job.stop(); });

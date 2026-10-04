@@ -41,7 +41,7 @@
 .cb-utawa-bank .cb-utawa-bank-sub { font-size: 11px; opacity: 0.7; }
 .cb-utawa-bank .cb-utawa-bank-pick { margin-left: auto; }
 .cb-utawa-bar { font-size: 10px; opacity: 0.65; padding: 2px 4px; align-self: center; }
-.cb-utawa-ph { font-family: monospace; font-size: 11px; opacity: 0.8; min-height: 14px; }
+.cb-utawa-ph { font-family: monospace; font-size: 11px; opacity: 0.8; min-height: 14px; margin-top: 4px; line-height: 1.5; }
 `);
 
     // ------------------------------------------------------------ phonemes
@@ -815,8 +815,107 @@
         });
         const phLine = HTML.div({ class: "cb-utawa-ph" });
         const mapBox = HTML.div({ class: "cb-utawa-map" });
+        // ---- score view: the channel's notes on a piano roll with their lyrics, like a vocal synth editor
+        const roll = HTML.canvas({ class: "cb-canvas cb-utawa-roll", style: "height: 150px;", title: "Click a note to type its lyric" });
+        let rollNotes = [], rollView = null;
+        const syllableOfNote = (p, list, index) => {
+            const own = p.noteLyrics[index];
+            if (own) return { syl: parseLyrics(String(own), p.lang | 0, false)[0] || null, own: true };
+            const k = list.length ? (p.wrap !== false ? index % list.length : index) : -1;
+            return { syl: k >= 0 && k < list.length ? list[k] : null, own: false };
+        };
+        function drawRoll() {
+            const { ctx, w, h } = CarrotUI.ctx(roll);
+            ctx.fillStyle = "#14131a";
+            ctx.fillRect(0, 0, w, h);
+            const song = host.song, t = host.target;
+            if (!t || t.channel == undefined || !song.channels[t.channel]) return;
+            const ch = t.channel, p = getP();
+            const list = parseLyrics(p.lyrics, p.lang | 0, p.autoSplit !== false);
+            const first = Math.max(0, Math.min(song.barCount - 1, host.doc.bar));
+            const bars = Math.min(2, song.barCount - first);
+            const barParts = song.beatsPerBar * A.Config.partsPerBeat;
+            rollNotes = [];
+            let index = noteCount(song, ch, first), lo = 1e9, hi = -1e9;
+            for (let b = first; b < first + bars; b++) {
+                const pattern = song.getPattern(ch, b);
+                if (!pattern) continue;
+                for (const note of pattern.notes.slice().sort((x, y) => x.start - y.start)) {
+                    const { syl, own } = syllableOfNote(p, list, index);
+                    rollNotes.push({ bar: b - first, start: note.start, end: note.end, pitch: note.pitches[0], index, syl, own });
+                    lo = Math.min(lo, note.pitches[0]); hi = Math.max(hi, note.pitches[0]);
+                    index++;
+                }
+            }
+            if (rollNotes.length == 0) { lo = 36; hi = 48; }
+            lo -= 2; hi += 2;
+            if (hi - lo < 12) { const mid = (hi + lo) / 2; lo = Math.floor(mid - 6); hi = Math.ceil(mid + 6); }
+            const keyW = 26, rowH = (h - 2) / (hi - lo + 1), total = bars * barParts;
+            const xOf = (bar, part) => keyW + (bar * barParts + part) / total * (w - keyW);
+            const yOf = (pitch) => h - 1 - (pitch - lo + 1) * rowH;
+            const basePitch = A.Config.keys[song.key].basePitch;
+            // keyboard and black-key rows
+            for (let m = lo; m <= hi; m++) {
+                const black = [1, 3, 6, 8, 10].indexOf((m + basePitch) % 12) != -1;
+                ctx.fillStyle = black ? "#1b1a22" : "#211f2a";
+                ctx.fillRect(keyW, yOf(m), w - keyW, rowH);
+                ctx.fillStyle = black ? "#2a2833" : "#d9d6e2";
+                ctx.fillRect(0, yOf(m), keyW - 2, Math.max(1, rowH - 0.5));
+                if ((m + basePitch) % 12 == 0 && rowH > 7) {
+                    ctx.fillStyle = "#555";
+                    ctx.font = "8px sans-serif";
+                    ctx.fillText("C" + Math.floor((m + basePitch) / 12 - 1), 2, yOf(m) + rowH - 1.5);
+                }
+            }
+            // beat and bar lines
+            for (let beat = 0; beat <= bars * song.beatsPerBar; beat++) {
+                const x = Math.round(xOf(0, beat * A.Config.partsPerBeat)) + 0.5;
+                ctx.strokeStyle = beat % song.beatsPerBar == 0 ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.07)";
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+            }
+            // notes with their lyric and phonemes
+            const color = getComputedStyle(root).getPropertyValue("--cb-plugin-color").trim() || "#ff7eb6";
+            for (const n of rollNotes) {
+                const x = xOf(n.bar, n.start) + 1, x2 = xOf(n.bar, n.end) - 1, y = yOf(n.pitch);
+                const height = Math.max(6, rowH);
+                ctx.fillStyle = n.syl && n.syl.rest ? "rgba(255,255,255,0.18)" : color;
+                ctx.globalAlpha = n.syl && n.syl.melisma ? 0.55 : 0.92;
+                ctx.fillRect(x, y - (height - rowH) / 2, Math.max(3, x2 - x), height);
+                ctx.globalAlpha = 1;
+                if (n.own) { ctx.fillStyle = "#fff"; ctx.fillRect(x, y + height - 2 - (height - rowH) / 2, Math.max(3, x2 - x), 2); }
+                const text = n.syl ? (n.syl.melisma ? "-" : n.syl.rest ? "." : String(n.syl.text).replace(/\(\d+\)$/, "")) : "ah";
+                ctx.fillStyle = "#16131c";
+                ctx.font = "bold 10px sans-serif";
+                ctx.save();
+                ctx.beginPath(); ctx.rect(x, 0, Math.max(3, x2 - x), h); ctx.clip();
+                ctx.fillText(text, x + 3, y + Math.min(height, 11) - 1 - (height - rowH) / 2);
+                ctx.restore();
+                // phonemes above the note, as in a vocal editor
+                if (n.syl && n.syl.ph && n.syl.ph.length && x2 - x > 18) {
+                    ctx.fillStyle = "rgba(255,255,255,0.55)";
+                    ctx.font = "9px monospace";
+                    ctx.fillText("[" + n.syl.ph.map(q => q.replace("hum:", "")).join(" ") + "]", x + 1, y - 3 - (height - rowH) / 2);
+                }
+            }
+            rollView = { xOf, yOf, rowH, first, bars };
+        }
+        roll.addEventListener("click", (event) => {
+            if (!rollView) return;
+            const rect = roll.getBoundingClientRect();
+            const px = event.clientX - rect.left, py = event.clientY - rect.top;
+            for (const n of rollNotes) {
+                const x = rollView.xOf(n.bar, n.start), x2 = rollView.xOf(n.bar, n.end), y = rollView.yOf(n.pitch);
+                if (px >= x && px <= x2 && py >= y - 4 && py <= y + Math.max(6, rollView.rowH) + 4) {
+                    const current = n.own ? getP().noteLyrics[n.index] : n.syl && !n.syl.melisma && !n.syl.rest ? String(n.syl.text).replace(/\(\d+\)$/, "") : "";
+                    editNote(n.index, current);
+                    return;
+                }
+            }
+        });
+        redraws.push(drawRoll);
         const mapInfo = HTML.div({ class: "cb-hint" });
         function updateMap() {
+            setTimeout(drawRoll, 0);
             const p = getP();
             const list = parseLyrics(p.lyrics, p.lang | 0, p.autoSplit !== false);
             phLine.textContent = list.slice(0, 18).map(s => s.melisma ? "-" : s.rest ? "." : s.ph.map(x => x.replace("hum:", "")).join(" ")).join("  |  ") + (list.length > 18 ? "  ..." : "");
@@ -873,7 +972,7 @@
         }, { title: "Sings the next few syllables on the plugin keyboard" });
         const lyricsTab = HTML.div(
             CarrotUI.section("Lyrics", lyrics, CarrotUI.row(langSelect, examples, splitToggle, wrapToggle, testButton), phLine),
-            CarrotUI.section("Which note sings what (click a note to change its lyric)", mapBox, CarrotUI.row(mapInfo, clearEdits)),
+            CarrotUI.section("Score (click a note to change its lyric)", roll, HTML.div({ style: "height: 6px;" }), mapBox, CarrotUI.row(mapInfo, clearEdits)),
             CarrotUI.hint("Syllables are separated by spaces or hyphens. A lone - holds the previous vowel over another note (melisma), . makes a silent note, and [l ah v] spells phonemes: a ae ah aw e er ih i uh u o ai ei oi au ou, m n ng l r w y p b t d k g f v s z sh zh th dh h ch j ts."));
         // ---- voice tab
         const voiceSelect = HTML.select({ class: "cb-select", title: "Voice preset" }, HTML.option({ value: "" }, "Choose a voice..."), ...VOICES.map((v, i) => HTML.option({ value: String(i) }, v.name)));

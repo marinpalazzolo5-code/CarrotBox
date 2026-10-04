@@ -7,19 +7,19 @@
     // ======================================================================
     const CARROT_PLUGIN_CATALOG = [
         {
-            id: "swarm", name: "Swarm", kind: "instrument", file: "plugins/swarm.js", alt: "Hive 2", icon: "Sw", color: "#ffb02e", sizeKB: 42,
+            id: "swarm", name: "Swarm", kind: "instrument", file: "plugins/swarm.js", alt: "Hive 2", icon: "Sw", color: "#ffb02e", sizeKB: 44,
             blurb: "Fast, friendly hybrid synth: 3 oscillators with up to 8-voice unison, sub & noise, two filters (serial/parallel), amp + mod envelopes, 2 LFOs, a mod matrix and built-in FX.",
         },
         {
-            id: "prism", name: "Prism", kind: "instrument", file: "plugins/prism.js", alt: "Serum", icon: "Pr", color: "#4fc3f7", sizeKB: 55,
+            id: "prism", name: "Prism", kind: "instrument", file: "plugins/prism.js", alt: "Serum", icon: "Pr", color: "#4fc3f7", sizeKB: 57,
             blurb: "Wavetable synth: two morphing wavetable oscillators with warp modes, 3D wavetable view, draw or import your own tables, sub & noise, filter, 3 envelopes, 4 LFOs, mod matrix and an FX rack.",
         },
         {
-            id: "seedling", name: "Seedling", kind: "instrument", file: "plugins/seedling.js", alt: "Synplant", icon: "Sd", color: "#7bd88f", sizeKB: 40,
+            id: "seedling", name: "Seedling", kind: "instrument", file: "plugins/seedling.js", alt: "Synplant", icon: "Sd", color: "#7bd88f", sizeKB: 44,
             blurb: "Grow sounds instead of programming them: plant a seed, explore its mutated branches, edit the sound's DNA, or let it grow a patch that imitates a sample.",
         },
         {
-            id: "chopshop", name: "Chop Shop", kind: "instrument", file: "plugins/chopshop.js", alt: "Serato Sample", icon: "Cs", color: "#ff6b6b", sizeKB: 42,
+            id: "chopshop", name: "Chop Shop", kind: "instrument", file: "plugins/chopshop.js", alt: "Serato Sample", icon: "Cs", color: "#ff6b6b", sizeKB: 45,
             blurb: "Sample chopper: finds 16 cues for you, detects key & BPM, shifts key without changing speed, time-stretches to your song and plays cues from pads or keys.",
         },
         {
@@ -27,11 +27,11 @@
             blurb: "Sketch ideas fast: draw a melody line and it snaps to your scale, build chord progressions, bass lines and arps, then drop them straight into patterns.",
         },
         {
-            id: "utawa", name: "Utawa", kind: "instrument", file: "plugins/utawa.js", alt: "VOCALOID 6", icon: "Ut", color: "#ff7eb6", sizeKB: 65,
+            id: "utawa", name: "Utawa", kind: "instrument", file: "plugins/utawa.js", alt: "VOCALOID 6", icon: "Ut", color: "#ff7eb6", sizeKB: 71,
             blurb: "Singing synthesizer: type lyrics (English, Japanese romaji, Spanish or Chinese pinyin) and every note sings the next syllable, glides between notes, with consonants, vowels, vibrato, scoops, breath, choir unison and nine voice presets.",
         },
         {
-            id: "liveloops", name: "Live Loops", kind: "tool", file: "plugins/liveloops.js", alt: "GarageBand Live Loops", icon: "LL", color: "#2ecc71", sizeKB: 44,
+            id: "liveloops", name: "Live Loops", kind: "tool", file: "plugins/liveloops.js", alt: "GarageBand Live Loops", icon: "LL", color: "#2ecc71", sizeKB: 47,
             blurb: "A 16 x 16 loop launcher with 1,248 loops in 24 genres, composed at your song's tempo and key. Launch cells and scenes, then record the performance into the song.",
         },
         {
@@ -43,7 +43,7 @@
             blurb: "Experimental: turns a WAV or MP3 into a song. Finds the tempo, beat and key, hears the drums, follows the bass and lead, recognizes the chords and an inner voice, and writes them as channels (with the original muted for A/B).",
         },
         {
-            id: "mangler", name: "Mangler FX", kind: "effect", file: "plugins/mangler.js", alt: "UGFX", icon: "Mg", color: "#f78c6c", sizeKB: 20,
+            id: "mangler", name: "Mangler FX", kind: "effect", file: "plugins/mangler.js", alt: "UGFX", icon: "Mg", color: "#f78c6c", sizeKB: 21,
             blurb: "Creative multi-effect rack: chain up to 8 effects (distortion, crusher, filter sweeps, chorus, phaser, flanger, delay, reverb, glitch repeats, tape stop...) with macros and presets.",
         },
     ];

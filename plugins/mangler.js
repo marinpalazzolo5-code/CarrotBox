@@ -13,6 +13,22 @@
     const A = B.CarrotAPI;
     const { HTML, CarrotUI, CarrotFX, CarrotDSP, carrotFxRack, carrotToNorm, carrotFromNorm } = A;
 
+    // ---- window skin: a rack of units with metal faceplates, screws and LEDs (UGFX-style effect rack)
+    A.addStyle(`
+.cb-window.cb-plugin-mangler { --cb-plugin-color: #f78c6c; }
+.cb-plugin-mangler .cb-window-body { background: repeating-linear-gradient(90deg, #1b1c1e 0 2px, #202124 2px 4px) !important; }
+.cb-window.cb-plugin-mangler .cb-section { position: relative; background: linear-gradient(#3b3d41, #2e3034) !important; border: 1px solid #141517 !important; border-radius: 3px !important; padding-left: 26px !important; padding-right: 26px !important; box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 4px rgba(0,0,0,0.5); }
+.cb-window.cb-plugin-mangler .cb-section::before, .cb-window.cb-plugin-mangler .cb-section::after { content: ""; position: absolute; top: 8px; width: 9px; height: 9px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #9a9ca0, #4b4d51 70%); box-shadow: inset 0 0 0 1px #1d1e20; }
+.cb-window.cb-plugin-mangler .cb-section::before { left: 8px; }
+.cb-window.cb-plugin-mangler .cb-section::after { right: 8px; }
+.cb-window.cb-plugin-mangler .cb-section-title { color: #f2f2f2 !important; font-weight: 700; letter-spacing: 0.14em; }
+.cb-window.cb-plugin-mangler .cb-section-title::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--cb-plugin-color); box-shadow: 0 0 6px var(--cb-plugin-color); }
+.cb-plugin-mangler .cb-knob .cb-track { stroke: #17181a; }
+.cb-plugin-mangler .cb-knob { width: 58px; }
+.cb-plugin-mangler .cb-knob.cb-small { width: 50px; }
+.cb-plugin-mangler .cb-knob-label { text-transform: uppercase; font-size: 8.5px; letter-spacing: 0.02em; max-width: 66px; color: #b5b7ba; }
+`);
+
     const MAX_SLOTS = 8;
     const MACRO_COUNT = 4;
     const TARGETS_PER_MACRO = 4;

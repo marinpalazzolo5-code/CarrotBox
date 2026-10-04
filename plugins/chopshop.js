@@ -17,6 +17,20 @@
     const A = B.CarrotAPI;
     const { HTML, CarrotUI, CarrotDSP, FLSampleBank, Config, flToast, flMidiName } = A;
 
+    // ---- window skin: black deck, big key / tempo readouts, ringed pads (Serato Sample-like)
+    A.addStyle(`
+.cb-window.cb-plugin-chopshop { --cb-plugin-color: #ff5a5a; }
+.cb-plugin-chopshop .cb-window-body { background: #0d0d0f !important; color: #e6e6e8; }
+.cb-window.cb-plugin-chopshop .cb-section { background: #17171a !important; border: 1px solid #2a2a2f !important; border-radius: 6px !important; }
+.cb-window.cb-plugin-chopshop .cb-section-title { color: #9b9ba3 !important; font-weight: 700; }
+.cb-plugin-chopshop .cb-canvas { background: #050506 !important; border: 1px solid #26262b; border-radius: 4px; }
+.cb-plugin-chopshop .cb-chop-readouts { display: flex; gap: 8px; margin: 0 0 8px; }
+.cb-plugin-chopshop .cb-chop-readout { flex: 1 1 0; background: #17171a; border: 1px solid #2a2a2f; border-radius: 6px; padding: 5px 10px; }
+.cb-plugin-chopshop .cb-chop-readout small { display: block; font-size: 9px; letter-spacing: 0.12em; color: #8a8a92; text-transform: uppercase; }
+.cb-plugin-chopshop .cb-chop-readout b { font-size: 20px; font-weight: 700; color: #ffffff; letter-spacing: 0.02em; }
+.cb-plugin-chopshop .cb-chop-readout b.cb-accent { color: #ff5a5a; }
+`);
+
     const CUES = 16;
     const PLAY_MODES = ["Slice (to the next cue)", "To the end of the sample", "Gate (while the note is held)"];
     const KEY_MODES = ["Cues on keys / drum rows", "Whole sample, pitched by key"];
@@ -648,7 +662,24 @@
             if (job.status == "ready") { status.textContent = "Ready: key shift and tempo sync are applied."; draw(); }
             else status.textContent = "Processing the sample (key shift / tempo sync)... " + Math.round(job.progress * 100) + "%";
         };
+        // big readouts over the waveform, like a sampler deck: key, tempo, cues, length
+        const readout = (label) => { const b = HTML.b("-"); const el = HTML.div({ class: "cb-chop-readout" }, HTML.small(label), b); el.value = b; return el; };
+        const rKey = readout("Key"), rBpm = readout("BPM"), rCues = readout("Cues"), rLen = readout("Length");
+        const readouts = HTML.div({ class: "cb-chop-readouts" }, rKey, rBpm, rCues, rLen);
+        const refreshReadouts = () => {
+            const p = getP();
+            const entry = rawEntry();
+            const ready = entry && entry.status == "ready";
+            const shifted = p.key >= 0 ? (((p.key + (p.keyShift | 0)) % 12) + 12) % 12 : -1;
+            rKey.value.textContent = shifted >= 0 ? keyName(shifted, p.minor) : "-";
+            rKey.value.classList.toggle("cb-accent", !!p.keyShift);
+            rBpm.value.textContent = p.bpm ? (p.sync ? Math.round(songTempo()) + " (" + p.bpm + ")" : String(p.bpm)) : "-";
+            rBpm.value.classList.toggle("cb-accent", !!p.sync);
+            rCues.value.textContent = ready ? String(p.cues.length) : "-";
+            rLen.value.textContent = ready ? (entry.pcm.length / entry.rate).toFixed(2) + " s" : "-";
+        };
         const refreshInfo = () => {
+            refreshReadouts();
             const p = getP();
             const entry = rawEntry();
             info.innerHTML = "";
@@ -760,7 +791,7 @@
                     host.toggle("reverse", { label: "Reverse", def: false }),
                     host.knob("base", { label: "First key", min: 0, max: 72, step: 1, def: 48, small: true, format: (v) => String(Math.round(v)), title: "The note (pitch number) that plays cue 1 on a pitched channel", onChange: () => refreshPads() }))));
         const side = HTML.div(CarrotUI.section("Pads", padGrid, CarrotUI.hint("Cue 1 plays from the first key, then up the keyboard, and the cues repeat on the other keys. On a drum channel, cue 1 is the bottom row.")), CarrotUI.section("Cues", CarrotUI.row(equalButton, gridButton, chopButton)));
-        const main = HTML.div({ class: "cb-chop-main" }, HTML.div(wave, info, status, controls), side);
+        const main = HTML.div({ class: "cb-chop-main" }, HTML.div(readouts, wave, info, status, controls), side);
         root.appendChild(main);
 
         function refreshAll() {

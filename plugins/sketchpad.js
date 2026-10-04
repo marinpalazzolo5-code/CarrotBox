@@ -16,6 +16,15 @@
     const A = B.CarrotAPI;
     const { HTML, CarrotUI, CarrotDSP, Config, flToast, flMidiName, carrotSongScale, carrotNewChannel, carrotNameChannel } = A;
 
+    // ---- window skin: paper-like sketch canvas with a soft grid
+    A.addStyle(`
+.cb-window.cb-plugin-sketchpad { --cb-plugin-color: #c792ea; }
+.cb-plugin-sketchpad .cb-canvas { background: #15121a !important; border: 1px solid #3a3045; border-radius: 6px; }
+.cb-window.cb-plugin-sketchpad .cb-section { border-radius: 10px !important; }
+.cb-plugin-sketchpad .cb-tabs { display: flex; gap: 4px; border: none; margin-bottom: 8px; }
+.cb-plugin-sketchpad .cb-tab { border-radius: 14px; padding: 4px 14px; }
+`);
+
     const GRIDS = ["1/4 notes", "1/8 notes", "1/16 notes"];
     const GRID_STEPS = [1, 2, 4];
     const DEGREES = ["I", "II", "III", "IV", "V", "VI", "VII"];

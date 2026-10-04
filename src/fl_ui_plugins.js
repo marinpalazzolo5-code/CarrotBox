@@ -343,7 +343,7 @@
             dot.setAttribute("class", "cb-dot");
             dot.setAttribute("r", "2.6");
             svg.append(track, arc, dot);
-            const label = HTML.div({ class: "cb-knob-label" }, spec.label || "");
+            const label = HTML.div({ class: "cb-knob-label", title: spec.label || "" }, spec.label || "");
             const readout = HTML.div({ class: "cb-knob-value" });
             const el = HTML.div({ class: "cb-knob" + (spec.small ? " cb-small" : ""), tabindex: "0", title: "" }, svg, label, readout);
             const R = 15;
@@ -575,6 +575,15 @@
         }
         static hint(text) {
             return HTML.div({ class: "cb-hint" }, text);
+        }
+        // Colours sections by their title: rules = [[/regex/, "#color"], ...]. Sets --cb-section-accent.
+        static accentSections(root, rules) {
+            for (const section of root.querySelectorAll(".cb-section")) {
+                const title = section.header ? section.header.textContent : (section.querySelector(".cb-section-title") || { textContent: "" }).textContent;
+                const rule = rules.find(([re]) => re.test(title));
+                if (rule)
+                    section.style.setProperty("--cb-section-accent", rule[1]);
+            }
         }
         // tabs: [[name, element], ...]
         static tabs(tabs, onSwitch = null) {
@@ -1393,6 +1402,8 @@
             const randomButton = HTML.button({ type: "button", title: "Randomize every setting" }, "Random");
             super(editor, { key, title: plugin.name, icon: plugin.icon || "Pl", color: plugin.color || (CarrotPlugins.info(plugin.id) || {}).color, width: plugin.width, titleExtras: [presetSelect, randomButton] });
             this.plugin = plugin;
+            // plugins skin their own window through this class (like a VST's own UI inside the host's frame)
+            this.container.classList.add("cb-plugin-" + plugin.id);
             this.host = new CarrotPluginHost(editor, target, plugin);
             this._presetSelect = presetSelect;
             this._randomButton = randomButton;

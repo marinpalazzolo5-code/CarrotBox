@@ -40,7 +40,7 @@
 .cb-ll-bar .cb-ll-info { font-size: 12px; opacity: 0.85; margin-left: auto; }
 .cb-ll-main { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 8px; min-height: 0; }
 .cb-ll-gridwrap { overflow: auto; max-height: 62vh; border-radius: 6px; background: rgba(0,0,0,0.18); padding: 4px; }
-.cb-ll-grid { display: grid; grid-template-columns: 150px repeat(${COLS}, 30px); grid-auto-rows: 26px; gap: 3px; width: max-content; }
+.cb-ll-grid { display: grid; grid-template-columns: 150px repeat(${COLS}, 30px); grid-auto-rows: 30px; gap: 4px; width: max-content; }
 .cb-ll-scene { border: none; border-radius: 4px; font-size: 10px; cursor: pointer; background: var(--ui-widget-background, #333); color: var(--primary-text, #fff); padding: 0; }
 .cb-ll-scene:hover { background: var(--ui-widget-focus, #555); }
 .cb-ll-scene.cb-live { background: #2ecc71; color: #000; }
@@ -52,11 +52,20 @@
 .cb-ll-head button:hover { color: var(--primary-text, #fff); background: rgba(255,255,255,0.08); }
 .cb-ll-head button.cb-on { color: #ff6b6b; }
 .cb-ll-head input[type=range] { width: 30px; height: 12px; margin: 0; padding: 0; flex: none; }
-.cb-ll-cell { border-radius: 4px; border: 1px dashed rgba(255,255,255,0.12); position: relative; cursor: pointer; overflow: hidden; font-size: 9px; line-height: 1; color: #111; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 2px; user-select: none; }
-.cb-ll-cell.cb-filled { border: none; }
+.cb-ll-cell { border-radius: 7px; border: 1px dashed rgba(255,255,255,0.12); position: relative; cursor: pointer; overflow: hidden; font-size: 9px; line-height: 1; color: #111; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 2px; user-select: none; }
+.cb-ll-cell.cb-filled { border: none; box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -2px 0 rgba(0,0,0,0.25); }
+.cb-ll-cell .cb-ll-glyph { position: absolute; inset: 4px 3px 12px; opacity: 0.55; pointer-events: none; }
+.cb-ll-cell .cb-ll-ring { position: absolute; inset: 3px; display: none; pointer-events: none; }
+.cb-ll-cell.cb-playing .cb-ll-ring, .cb-ll-cell.cb-stopping .cb-ll-ring { display: block; }
+.cb-ll-cell .cb-ll-ring circle { fill: none; stroke-width: 2.4; }
+.cb-ll-cell .cb-ll-ring .cb-ll-ring-bg { stroke: rgba(0,0,0,0.25); }
+.cb-ll-cell .cb-ll-ring .cb-ll-ring-fg { stroke: #ffffff; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; }
+.cb-ll-scene { position: relative; }
+.cb-ll-scene::before { content: ""; display: inline-block; width: 0; height: 0; border-left: 6px solid currentColor; border-top: 4px solid transparent; border-bottom: 4px solid transparent; margin-right: 3px; vertical-align: -1px; opacity: 0.7; }
+.cb-ll-head .cb-ll-swatch { width: 18px !important; height: 18px; align-self: center !important; border-radius: 5px !important; margin: 0 2px 0 0 !important; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; color: #111; }
 .cb-ll-cell.cb-selected { outline: 2px solid var(--primary-text, #fff); outline-offset: 0; }
 .cb-ll-cell.cb-drop { outline: 2px dashed #fff; }
-.cb-ll-cell .cb-ll-progress { position: absolute; left: 0; bottom: 0; height: 100%; background: rgba(255,255,255,0.35); width: 0; pointer-events: none; }
+.cb-ll-cell .cb-ll-progress { display: none; }
 .cb-ll-cell.cb-playing { box-shadow: 0 0 0 2px #2ecc71 inset; }
 .cb-ll-cell.cb-queued { animation: cb-ll-blink 0.5s steps(2) infinite; }
 .cb-ll-cell.cb-stopping { box-shadow: 0 0 0 2px #ff6b6b inset; }
@@ -145,6 +154,29 @@
         if (state.rows[r].name) return state.rows[r].name;
         const first = state.cells[r].find(id => id);
         return first ? FLLoops.get(first).type : "Track " + (r + 1);
+    }
+    // A small MIDI-style picture for a cell, the same for the same loop every time.
+    function loopGlyph(item) {
+        let h = 2166136261;
+        for (const ch of String(item.id)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+        const rand = () => ((h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0) / 4294967296);
+        const svg = A.SVG.svg({ class: "cb-ll-glyph", viewBox: "0 0 24 14", preserveAspectRatio: "none" });
+        const drumLike = ["drums", "tops", "perc"].indexOf(item.typeSlug) != -1;
+        if (drumLike) {
+            for (let i = 0; i < 8; i++) if (rand() < 0.62 || i % 4 == 0)
+                svg.appendChild(A.SVG.rect({ x: String(i * 3 + 0.4), y: String(rand() < 0.5 ? 2 : 7), width: "1.4", height: "5", fill: "#111", rx: "0.5" }));
+        }
+        else {
+            let y = 4 + Math.floor(rand() * 6);
+            for (let x = 0; x < 24;) {
+                const w = 2 + Math.floor(rand() * (item.typeSlug == "pad" || item.typeSlug == "chords" ? 8 : 4));
+                svg.appendChild(A.SVG.rect({ x: String(x), y: String(y), width: String(Math.max(1.2, w - 0.8)), height: "2", fill: "#111", rx: "0.6" }));
+                if (item.typeSlug == "chords" || item.typeSlug == "pad") svg.appendChild(A.SVG.rect({ x: String(x), y: String(Math.max(0, y - 4)), width: String(Math.max(1.2, w - 0.8)), height: "2", fill: "#111", rx: "0.6" }));
+                x += w;
+                y = Math.max(1, Math.min(12, y + Math.round((rand() - 0.5) * 6)));
+            }
+        }
+        return svg;
     }
     function shortLabel(item) {
         const map = { drums: "Dr", tops: "Tp", perc: "Pc", bass: "Bs", chords: "Ch", keys: "Ky", melody: "Ml", arp: "Ar", pad: "Pd", fx: "Fx", vox: "Vx" };
@@ -485,9 +517,13 @@
                 for (let c = 0; c < COLS; c++) {
                     const progress = HTML.div({ class: "cb-ll-progress" });
                     const label = HTML.span({ style: "position: relative;" });
-                    const cell = HTML.div({ class: "cb-ll-cell" }, progress, label);
+                    const ringFg = A.SVG.circle({ class: "cb-ll-ring-fg", cx: "12", cy: "12", r: "10", "stroke-dasharray": "62.83", "stroke-dashoffset": "62.83" });
+                    const ring = A.SVG.svg({ class: "cb-ll-ring", viewBox: "0 0 24 24" }, A.SVG.circle({ class: "cb-ll-ring-bg", cx: "12", cy: "12", r: "10" }), ringFg);
+                    const cell = HTML.div({ class: "cb-ll-cell" }, progress, label, ring);
                     cell._progress = progress;
                     cell._label = label;
+                    // GarageBand-style: a ring fills up as the loop plays
+                    cell._setProgress = (v) => ringFg.setAttribute("stroke-dashoffset", (62.83 * (1 - Math.max(0, Math.min(1, v)))).toFixed(2));
                     cell.addEventListener("mousedown", (event) => {
                         if (event.button != 0) return;
                         select(r, c);
@@ -520,7 +556,8 @@
             for (let r = 0; r < ROWS; r++) {
                 const rowState = engine.rows[r];
                 const first = state.cells[r].find(id => id);
-                headEls[r].swatch.style.background = first ? FLLoops.get(first).color : "transparent";
+                headEls[r].swatch.style.background = first ? FLLoops.get(first).color : "rgba(127,127,127,0.25)";
+                headEls[r].swatch.textContent = first ? shortLabel(FLLoops.get(first)).replace(/\d+$/, "").charAt(0) : "";
                 if (full) headEls[r].name.textContent = rowLabel(state, r);
                 for (let c = 0; c < COLS; c++) {
                     const cell = cellEls[r][c];
@@ -531,13 +568,15 @@
                         cell.classList.toggle("cb-filled", !!item);
                         cell.style.background = item ? item.color : "transparent";
                         cell._label.textContent = item ? shortLabel(item) : "";
+                        if (cell._glyph) { cell._glyph.remove(); cell._glyph = null; }
+                        if (item) { cell._glyph = loopGlyph(item); cell.insertBefore(cell._glyph, cell.firstChild); }
                         cell.title = item ? FLLoops.nameOf(id) + " - " + item.bars + " bar" + (item.bars == 1 ? "" : "s") + "\nClick to launch or stop, right-click to clear, drag a loop here to replace" : "Empty - select it, then double-click a loop in the list (or drag one here)";
                     }
                     cell.classList.toggle("cb-selected", selected.r == r && selected.c == c);
                     cell.classList.toggle("cb-playing", rowState.col == c && !rowState.stopAt);
                     cell.classList.toggle("cb-stopping", rowState.col == c && !!rowState.stopAt);
                     cell.classList.toggle("cb-queued", rowState.queuedCol == c);
-                    if (rowState.col != c) cell._progress.style.width = "0";
+                    if (rowState.col != c) cell._setProgress(0);
                 }
             }
             playButton.textContent = engine.running ? "Stop" : "Play";
@@ -748,7 +787,7 @@
                     const row = engine.rows[r];
                     if (row.col >= 0 && row.loopSeconds > 0) {
                         const progress = ((now - row.startedAt) % row.loopSeconds) / row.loopSeconds;
-                        cellEls[r][row.col]._progress.style.width = (Math.max(0, progress) * 100).toFixed(1) + "%";
+                        cellEls[r][row.col]._setProgress(progress);
                     }
                 }
                 if (engine.recording) {

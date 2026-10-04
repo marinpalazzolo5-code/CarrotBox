@@ -263,7 +263,7 @@ A sound design tool in the spirit of Synplant. You do not program parameters, yo
 
 - **Plant.** Every sound has a "DNA" of 20 genes (shape, overtone, mix, detune, FM, noise, drive, sub, tremolo, vibrato, cutoff, resonance, filter envelope, attack, decay, sustain, release, pitch drop and more). Press **Plant** to make the current sound the root and grow a ring of 12 mutated **branches**. Click a branch to move there and hear it, then plant again from that spot. **Back to the root** and undo let you explore without getting lost, and **Mutation** controls how far the branches stray.
 - **Genes.** Edit the DNA directly with knobs when you want a specific change.
-- **Genopatch.** Drop in or choose an audio sample and Seedling uses a genetic algorithm to evolve a patch that imitates it (this takes a few seconds). Hear the target, grow, then keep the result.
+- **Grow from sample.** Drop in or choose an audio sample and Seedling uses a genetic algorithm to evolve a patch that imitates it (this takes a few seconds). Hear the target, grow, then keep the result.
 - Effect rack with up to 6 effects, and a Random button.
 
 ### Chop Shop (sample chopper)

@@ -16,6 +16,26 @@
     const A = B.CarrotAPI;
     const { HTML, CarrotUI, CarrotFX, CarrotDSP, CarrotADSR, CarrotSVF, CarrotDelayLine, CarrotWavetable, carrotFxRack, carrotSyncOptions, carrotSyncBeats } = A;
 
+    // ---- window skin: flat graphite panels, coloured section strips, page tabs on the right (Hive-like)
+    A.addStyle(`
+.cb-window.cb-plugin-swarm { --cb-plugin-color: #f2a33a; }
+.cb-plugin-swarm .cb-window-body { background: #2b2e32 !important; color: #d8dbde; }
+.cb-plugin-swarm .cb-tabs { display: flex; justify-content: flex-end; gap: 2px; background: #1c1e21; border-radius: 4px; padding: 3px; margin-bottom: 8px; border: none; }
+.cb-plugin-swarm .cb-tab { text-transform: uppercase; letter-spacing: 0.09em; font-size: 10px; font-weight: 700; padding: 5px 14px; color: #8a9097; background: transparent; border: none; border-radius: 3px; }
+.cb-plugin-swarm .cb-tab.cb-on { background: #3b4046; color: #f2a33a; }
+.cb-window.cb-plugin-swarm .cb-section { background: #34383d !important; border: none !important; border-top: 3px solid var(--cb-section-accent, #f2a33a) !important; border-radius: 3px !important; box-shadow: inset 0 -1px 0 rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.03); }
+.cb-window.cb-plugin-swarm .cb-section-title { color: #eceef0 !important; font-weight: 700; letter-spacing: 0.1em; }
+.cb-plugin-swarm .cb-knob .cb-track { stroke: #1d2023; }
+.cb-plugin-swarm .cb-knob .cb-arc { stroke: var(--cb-section-accent, #f2a33a); }
+.cb-plugin-swarm .cb-knob .cb-dot { fill: #ffffff; }
+.cb-plugin-swarm .cb-knob { width: 58px; }
+.cb-plugin-swarm .cb-knob.cb-small { width: 50px; }
+.cb-plugin-swarm .cb-knob-label { text-transform: uppercase; font-size: 8.5px; letter-spacing: 0.02em; max-width: 66px; color: #9aa0a6; }
+.cb-plugin-swarm .cb-window-body select, .cb-plugin-swarm .cb-window-body .cb-select { background: #1c1e21 !important; color: #e3e6e8 !important; border: 1px solid #4a4f55 !important; border-radius: 3px; }
+.cb-plugin-swarm .cb-canvas { background: #17191b !important; border: 1px solid #484d53; border-radius: 3px; }
+.cb-plugin-swarm .cb-toggle.cb-on { background: var(--cb-section-accent, #f2a33a); }
+`);
+
     const BLOCK = 16;
     const MAX_UNISON = 8;
     const WAVES = ["Sine", "Triangle", "Saw", "Square", "Pulse", "Saw-Tri morph", "Organ", "Strings", "Reed", "Glass", "Digital", "Noise"];
@@ -687,6 +707,7 @@
         const tabs = CarrotUI.tabs([["Oscillators", oscTab], ["Filters & envelopes", filterTab], ["Modulation", modTab], ["Effects", fxTab]], () => setTimeout(() => { redraws.forEach(f => f()); }));
         host.onRefresh(() => redraws.forEach(f => f()));
         root.appendChild(tabs);
+        CarrotUI.accentSections && CarrotUI.accentSections(root, [[/oscillator/i, "#f2a33a"], [/sub|noise/i, "#b0b6bc"], [/output|voice/i, "#5fd3c6"], [/filter/i, "#4fc3f7"], [/env/i, "#9be36b"], [/lfo/i, "#c792ea"], [/matrix|mod/i, "#ff7eb6"], [/arp|seq/i, "#ffd166"], [/effect|fx/i, "#f78c6c"]]);
         setTimeout(() => redraws.forEach(f => f()), 30);
         return root;
     }
