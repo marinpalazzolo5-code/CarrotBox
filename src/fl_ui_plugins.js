@@ -1866,9 +1866,9 @@
                 if (!CarrotPlugins.isInstalled(info.id))
                     continue;
                 const loaded = CarrotPlugins.isLoaded(info.id);
-                const kindLabel = info.kind == "instrument" ? "Generator" : info.kind == "effect" ? "Effect" : "Tool";
+                const kindLabel = info.experimental ? "Experimental" : info.kind == "instrument" ? "Generator" : info.kind == "effect" ? "Effect" : "Tool";
                 items.push({
-                    key: info.id, group: "Installed plugins", icon: info.icon, color: info.color, name: info.name, sub: (loaded ? "" : "loading… · ") + (info.alt ? info.alt + "-style " : "CarrotBox ") + kindLabel.toLowerCase() + " — " + info.blurb, badge: kindLabel,
+                    key: info.id, group: "Installed plugins", icon: info.icon, color: info.color, name: info.name, sub: (loaded ? "" : "loading… · ") + (info.alt ? info.alt + "-style " : "CarrotBox ") + (info.experimental ? "experimental " + info.kind : kindLabel.toLowerCase()) + " — " + info.blurb, badge: kindLabel,
                     run: (shift) => {
                         if (info.kind == "instrument")
                             carrotLoadInstrumentPlugin(this._editor, info.id, shift);
@@ -2103,6 +2103,7 @@
             CarrotWindows, CarrotPlugins, carrotNewChannel, carrotNameChannel,
             // song editing (for tools that write into the song)
             Note, Pattern, Instrument, ChangeGroup, ChangeFL, ChangeBarCount, ChangeChannelBar, ChangeInstrumentsFlags, ChangeNoteAdded, ChangeNoteTruncate, ChangeEnsurePatternExists, ChangePatternNumbers,
+            ChangeSong, ChangeTempo, ChangeKey, ChangeScale, ChangeBeatsPerBar, ChangePreset, ChangeLoop, EditorConfig, FLActions,
             addStyle: (css) => document.head.appendChild(HTML.style({ type: "text/css" }, css)),
         };
         return carrotPluginApi._api;

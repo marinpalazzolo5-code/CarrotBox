@@ -28,7 +28,7 @@
         },
         {
             id: "utawa", name: "Utawa", kind: "instrument", file: "plugins/utawa.js", alt: "VOCALOID 6", icon: "Ut", color: "#ff7eb6", sizeKB: 65,
-            blurb: "Singing synthesizer: type lyrics (English or Japanese romaji) and every note sings the next syllable, with consonants, vowels, vibrato, scoops, breath, choir unison and nine voice presets.",
+            blurb: "Singing synthesizer: type lyrics (English, Japanese romaji, Spanish or Chinese pinyin) and every note sings the next syllable, glides between notes, with consonants, vowels, vibrato, scoops, breath, choir unison and nine voice presets.",
         },
         {
             id: "liveloops", name: "Live Loops", kind: "tool", file: "plugins/liveloops.js", alt: "GarageBand Live Loops", icon: "LL", color: "#2ecc71", sizeKB: 44,
@@ -37,6 +37,10 @@
         {
             id: "bouncify", name: "Bouncify", kind: "tool", file: "plugins/bouncify.js", icon: "Bc", color: "#ffd166", sizeKB: 19,
             blurb: "Makes a lead, bass or any part bouncy: staccato, swing, octave hops, accents, pitch scoops, bouncing-ball echoes, chops, pushes and an optional sidechain pump. Eight styles, one undo step.",
+        },
+        {
+            id: "audiomidi", name: "AudioMidi", kind: "tool", file: "plugins/audiomidi.js", icon: "AM", color: "#00c8ff", sizeKB: 68, experimental: true,
+            blurb: "Experimental: turns a WAV or MP3 into a song. Finds the tempo, beat and key, hears the drums, follows the bass and lead, recognizes the chords and an inner voice, and writes them as channels (with the original muted for A/B).",
         },
         {
             id: "mangler", name: "Mangler FX", kind: "effect", file: "plugins/mangler.js", alt: "UGFX", icon: "Mg", color: "#f78c6c", sizeKB: 20,

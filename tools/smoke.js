@@ -47,7 +47,7 @@ function check(label, ok, detail) {
 		await page.keyboard.press("Enter");
 		await page.waitForTimeout(500);
 	};
-	for (const query of ["swarm", "prism", "seedling", "chop", "sketch", "mangler", "utawa", "live loops", "bouncify", "sp-404"]) {
+	for (const query of ["swarm", "prism", "seedling", "chop", "sketch", "mangler", "utawa", "live loops", "bouncify", "sp-404", "audiomidi"]) {
 		await launch(query);
 		const opened = await count();
 		await page.locator(".cb-window .cb-window-title button[title^='Close']").first().click();
@@ -279,6 +279,28 @@ function check(label, ok, detail) {
 		}
 		return silent;
 	});
+	// ---- AudioMidi on a synthetic song: clicks at 100 BPM and a sine bass line
+	const am = await page.evaluate(async () => {
+		const plugin = beepbox.CarrotPlugins.get("audiomidi");
+		const SR = plugin.SR, bpm = 100, beat = 60 / bpm, seconds = 24;
+		const x = new Float32Array(Math.floor(seconds * SR));
+		let seed = 1;
+		const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647 * 2 - 1;
+		const bassLine = [45, 48, 50, 52];
+		for (let b = 0; b * beat < seconds; b++) {
+			const t0 = Math.floor((0.25 + b * beat) * SR);
+			// a click on every beat, louder on the downbeat
+			for (let i = 0; i < 0.03 * SR && t0 + i < x.length; i++) x[t0 + i] += rand() * (b % 4 == 0 ? 0.9 : 0.5) * Math.exp(-i / (0.006 * SR));
+			// one bass note per beat
+			const f = 440 * Math.pow(2, (bassLine[b % 4] - 69) / 12);
+			for (let i = 0; i < beat * SR * 0.9 && t0 + i < x.length; i++) x[t0 + i] += 0.35 * (Math.sin(2 * Math.PI * f * i / SR) + 0.4 * Math.sin(4 * Math.PI * f * i / SR)) * Math.min(1, i / 200);
+		}
+		const r = await plugin.analyze(x, {});
+		const notes = r.bass.slice(0, 16).map(n => n.midi);
+		const right = r.bass.filter(n => bassLine.indexOf(n.midi) != -1).length;
+		return { bpm: r.bpm, notes: notes.join(" "), right, total: r.bass.length, drums: r.drums.length };
+	});
+	check("AudioMidi finds the tempo and the bass line of a test signal", Math.abs(am.bpm - 100) < 0.6 && am.total >= 8 && am.right / am.total > 0.7, JSON.stringify(am));
 	check("sampler, slicex and fpc sound on every key", Object.keys(keys).length == 0, JSON.stringify(keys));
 
 	check("no errors in the console", errors.length == 0, errors.slice(0, 5).join(" | "));

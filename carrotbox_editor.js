@@ -17598,7 +17598,7 @@ FLKitLibrary._loadPromise = null;
         },
         {
             id: "utawa", name: "Utawa", kind: "instrument", file: "plugins/utawa.js", alt: "VOCALOID 6", icon: "Ut", color: "#ff7eb6", sizeKB: 65,
-            blurb: "Singing synthesizer: type lyrics (English or Japanese romaji) and every note sings the next syllable, with consonants, vowels, vibrato, scoops, breath, choir unison and nine voice presets.",
+            blurb: "Singing synthesizer: type lyrics (English, Japanese romaji, Spanish or Chinese pinyin) and every note sings the next syllable, glides between notes, with consonants, vowels, vibrato, scoops, breath, choir unison and nine voice presets.",
         },
         {
             id: "liveloops", name: "Live Loops", kind: "tool", file: "plugins/liveloops.js", alt: "GarageBand Live Loops", icon: "LL", color: "#2ecc71", sizeKB: 44,
@@ -17607,6 +17607,10 @@ FLKitLibrary._loadPromise = null;
         {
             id: "bouncify", name: "Bouncify", kind: "tool", file: "plugins/bouncify.js", icon: "Bc", color: "#ffd166", sizeKB: 19,
             blurb: "Makes a lead, bass or any part bouncy: staccato, swing, octave hops, accents, pitch scoops, bouncing-ball echoes, chops, pushes and an optional sidechain pump. Eight styles, one undo step.",
+        },
+        {
+            id: "audiomidi", name: "AudioMidi", kind: "tool", file: "plugins/audiomidi.js", icon: "AM", color: "#00c8ff", sizeKB: 68, experimental: true,
+            blurb: "Experimental: turns a WAV or MP3 into a song. Finds the tempo, beat and key, hears the drums, follows the bass and lead, recognizes the chords and an inner voice, and writes them as channels (with the original muted for A/B).",
         },
         {
             id: "mangler", name: "Mangler FX", kind: "effect", file: "plugins/mangler.js", alt: "UGFX", icon: "Mg", color: "#f78c6c", sizeKB: 20,
@@ -38378,9 +38382,9 @@ You should be redirected to the song at:<br /><br />
                 if (!CarrotPlugins.isInstalled(info.id))
                     continue;
                 const loaded = CarrotPlugins.isLoaded(info.id);
-                const kindLabel = info.kind == "instrument" ? "Generator" : info.kind == "effect" ? "Effect" : "Tool";
+                const kindLabel = info.experimental ? "Experimental" : info.kind == "instrument" ? "Generator" : info.kind == "effect" ? "Effect" : "Tool";
                 items.push({
-                    key: info.id, group: "Installed plugins", icon: info.icon, color: info.color, name: info.name, sub: (loaded ? "" : "loading… · ") + (info.alt ? info.alt + "-style " : "CarrotBox ") + kindLabel.toLowerCase() + " — " + info.blurb, badge: kindLabel,
+                    key: info.id, group: "Installed plugins", icon: info.icon, color: info.color, name: info.name, sub: (loaded ? "" : "loading… · ") + (info.alt ? info.alt + "-style " : "CarrotBox ") + (info.experimental ? "experimental " + info.kind : kindLabel.toLowerCase()) + " — " + info.blurb, badge: kindLabel,
                     run: (shift) => {
                         if (info.kind == "instrument")
                             carrotLoadInstrumentPlugin(this._editor, info.id, shift);
@@ -38615,6 +38619,7 @@ You should be redirected to the song at:<br /><br />
             CarrotWindows, CarrotPlugins, carrotNewChannel, carrotNameChannel,
             // song editing (for tools that write into the song)
             Note, Pattern, Instrument, ChangeGroup, ChangeFL, ChangeBarCount, ChangeChannelBar, ChangeInstrumentsFlags, ChangeNoteAdded, ChangeNoteTruncate, ChangeEnsurePatternExists, ChangePatternNumbers,
+            ChangeSong, ChangeTempo, ChangeKey, ChangeScale, ChangeBeatsPerBar, ChangePreset, ChangeLoop, EditorConfig, FLActions,
             addStyle: (css) => document.head.appendChild(HTML.style({ type: "text/css" }, css)),
         };
         return carrotPluginApi._api;
@@ -42682,6 +42687,9 @@ html.carrot-fl .cfl-top {
                 case "hardware":
                     carrotOpen(editor, "flHardware");
                     return true;
+                case "audioMidi":
+                    carrotOpenTool(editor, "audiomidi");
+                    return true;
             }
         }
         else if (menu == "edit") {
@@ -42856,7 +42864,7 @@ html.carrot-fl .cfl-top {
             this._prevBarButton = button({ class: "prevBarButton", type: "button", title: "Previous Bar (left bracket)" });
             this._nextBarButton = button({ class: "nextBarButton", type: "button", title: "Next Bar (right bracket)" });
             this._volumeSlider = new Slider(input({ title: "main volume", style: "flex-grow: 1; margin: 0;", type: "range", min: "0", max: "75", value: "50", step: "1" }), this.doc, (oldValue, newValue) => { this._setVolumeSlider(); return null; });
-            this._fileMenu = select({ style: "width: 100%;" }, option({ selected: true, disabled: true, hidden: hideSelectMenuTitlesInOptions }, "File"), option({ value: "new" }, "New Blank Song"), option({ value: "import" }, "Import Song... (" + ctrlSymbol + "O)"), option({ value: "export" }, "Export Song... (" + ctrlSymbol + "S)"), option({ value: "saveProject" }, "Save Project + Samples (.json)"), option({ value: "kitLoader" }, "Drum Kit Generator / Loader... (K)"), option({ value: "flPacks" }, "Import FL Studio Packs Folder..."), option({ value: "recorder" }, "Audio Recorder..."), option({ value: "hardware" }, "SP-404MKII / MIDI Devices..."), option({ value: "copyUrl" }, "Copy Song URL"), option({ value: "shareUrl" }, "Share Song URL"), option({ value: "shortenUrl" }, "Shorten Song URL"), option({ value: "songRecovery" }, "Recover Recent Song..."));
+            this._fileMenu = select({ style: "width: 100%;" }, option({ selected: true, disabled: true, hidden: hideSelectMenuTitlesInOptions }, "File"), option({ value: "new" }, "New Blank Song"), option({ value: "import" }, "Import Song... (" + ctrlSymbol + "O)"), option({ value: "export" }, "Export Song... (" + ctrlSymbol + "S)"), option({ value: "saveProject" }, "Save Project + Samples (.json)"), option({ value: "kitLoader" }, "Drum Kit Generator / Loader... (K)"), option({ value: "flPacks" }, "Import FL Studio Packs Folder..."), option({ value: "recorder" }, "Audio Recorder..."), option({ value: "hardware" }, "SP-404MKII / MIDI Devices..."), option({ value: "audioMidi" }, "AudioMidi: Song from Audio (experimental)..."), option({ value: "copyUrl" }, "Copy Song URL"), option({ value: "shareUrl" }, "Share Song URL"), option({ value: "shortenUrl" }, "Shorten Song URL"), option({ value: "songRecovery" }, "Recover Recent Song..."));
             this._editMenu = select({ style: "width: 100%;" }, option({ selected: true, disabled: true, hidden: hideSelectMenuTitlesInOptions }, "Edit"), option({ value: "undo" }, "Undo (Z)"), option({ value: "redo" }, "Redo (Y)"), option({ value: "copy" }, "Copy Pattern (C)"), option({ value: "pasteNotes" }, "Paste Pattern Notes (V)"), option({ value: "pasteNumbers" }, "Paste Pattern Numbers (" + ctrlSymbol + "⇧V)"), option({ value: "insertBars" }, "Insert Bar (⏎)"), option({ value: "deleteBars" }, "Delete Selected Bars (⌫)"), option({ value: "insertChannel" }, "Insert Channel (" + ctrlSymbol + "⏎)"), option({ value: "deleteChannel" }, "Delete Selected Channels (" + ctrlSymbol + "⌫)"), option({ value: "selectAll" }, "Select All (A)"), option({ value: "selectChannel" }, "Select Channel (⇧A)"), option({ value: "duplicatePatterns" }, "Duplicate Reused Patterns (D)"), option({ value: "transposeUp" }, "Move Notes Up (+ or ⇧+)"), option({ value: "transposeDown" }, "Move Notes Down (- or ⇧-)"), option({ value: "moveNotesSideways" }, "Move All Notes Sideways..."), option({ value: "beatsPerBar" }, "Change Beats Per Bar..."), option({ value: "barCount" }, "Change Song Length..."), option({ value: "channelSettings" }, "Channel Settings... (Q)"), option({ value: "leadGen" }, "Melody / Rhythm Generator... (G)"), option({ value: "duplicateBar" }, "Copy Bar to Next Bar (" + ctrlSymbol + "D)"), option({ value: "clearPattern" }, "Clear Pattern Notes (⇧⌫)"), option({ value: "humanize" }, "Humanize Note Volumes (⇧H)"), option({ value: "quantize" }, "Quantize Notes to Rhythm (⇧Q)"), option({ value: "bouncify" }, "Bouncify Notes..."), option({ value: "liveLoops" }, "Live Loops..."));
             this._optionDefs = flPreferenceDefs();
             this._optionsMenu = select({ style: "width: 100%;" }, option({ selected: true, disabled: true, hidden: hideSelectMenuTitlesInOptions }, "Preferences"), ...this._optionDefs.map(def => option({ value: def[0] }, def[2])));

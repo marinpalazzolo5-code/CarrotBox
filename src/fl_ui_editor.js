@@ -234,6 +234,9 @@
                 case "hardware":
                     carrotOpen(editor, "flHardware");
                     return true;
+                case "audioMidi":
+                    carrotOpenTool(editor, "audiomidi");
+                    return true;
             }
         }
         else if (menu == "edit") {
