@@ -9073,7 +9073,7 @@ var beepbox = (function (exports) {
             if (instrument.type >= 9 && instrument.type <= 13) {
                 FLSynth.computeTone(this, song, instrument, instrumentState, tone, {
                     intervalStart, intervalEnd, fadeExpressionStart, fadeExpressionEnd, chordExpressionStart, chordExpressionEnd,
-                    envelopeStarts, envelopeEnds, roundedSamplesPerTick, isNoiseChannel, released, shouldFadeOutFast, noteFilterExpression,
+                    envelopeStarts, envelopeEnds, roundedSamplesPerTick, isNoiseChannel, released, shouldFadeOutFast, noteFilterExpression, channelIndex,
                 });
             }
             else if (instrument.type == 1) {
@@ -16274,6 +16274,9 @@ FLKitLibrary._loadPromise = null;
                 info = tone.flPluginInfo = {
                     freq: startFreq, freqScale: 1.0, gate: true, params: settings.params, sampleRate: synth.samplesPerSecond,
                     midi: startMidi, notePitch: notePitch, velocity: velocity, isNoise: ctx.isNoiseChannel, bpm: song.tempo, key: song.key,
+                    channel: ctx.channelIndex, bar: synth.bar,
+                    // position of this note in the channel (song order), e.g. for lyrics; null for live / preview notes
+                    noteIndex: (tone.note != null && ctx.channelIndex != undefined) ? FLSynth.noteOrderIndex(song, ctx.channelIndex, synth.bar, tone.note) : null,
                 };
                 try {
                     tone.flVoice = plugin.createVoice(settings.params, info);
@@ -16308,6 +16311,28 @@ FLKitLibrary._loadPromise = null;
             }
             tone.expression = expressionStart;
             tone.expressionDelta = (expressionEnd - expressionStart) / ctx.roundedSamplesPerTick;
+        }
+        // How many notes come before `note` in this channel, in song order (bars, then start time).
+        static noteOrderIndex(song, channelIndex, bar, note) {
+            const channel = song.channels[channelIndex];
+            if (!channel)
+                return null;
+            let count = 0;
+            for (let b = 0; b < bar && b < song.barCount; b++) {
+                const pattern = song.getPattern(channelIndex, b);
+                if (pattern)
+                    count += pattern.notes.length;
+            }
+            const pattern = song.getPattern(channelIndex, bar);
+            if (pattern) {
+                for (const other of pattern.notes) {
+                    if (other == note)
+                        break;
+                    if (other.start <= note.start)
+                        count++;
+                }
+            }
+            return count;
         }
         static pluginSynth(synth, bufferIndex, runLength, tone, instrumentState) {
             const voice = tone.flVoice;
@@ -17034,8 +17059,16 @@ FLKitLibrary._loadPromise = null;
             blurb: "Sketch ideas fast: draw a melody line and it snaps to your scale, build chord progressions, bass lines and arps, then drop them straight into patterns.",
         },
         {
+            id: "utawa", name: "Utawa", kind: "instrument", file: "plugins/utawa.js", alt: "VOCALOID 6", icon: "Ut", color: "#ff7eb6", sizeKB: 49,
+            blurb: "Singing synthesizer: type lyrics (English or Japanese romaji) and every note sings the next syllable, with consonants, vowels, vibrato, scoops, breath, choir unison and nine voice presets.",
+        },
+        {
             id: "liveloops", name: "Live Loops", kind: "tool", file: "plugins/liveloops.js", alt: "GarageBand Live Loops", icon: "LL", color: "#2ecc71", sizeKB: 44,
             blurb: "A 16 x 16 loop launcher with 1,248 loops in 24 genres, composed at your song's tempo and key. Launch cells and scenes, then record the performance into the song.",
+        },
+        {
+            id: "bouncify", name: "Bouncify", kind: "tool", file: "plugins/bouncify.js", icon: "Bc", color: "#ffd166", sizeKB: 19,
+            blurb: "Makes a lead, bass or any part bouncy: staccato, swing, octave hops, accents, pitch scoops, bouncing-ball echoes, chops, pushes and an optional sidechain pump. Eight styles, one undo step.",
         },
         {
             id: "mangler", name: "Mangler FX", kind: "effect", file: "plugins/mangler.js", alt: "UGFX", icon: "Mg", color: "#f78c6c", sizeKB: 20,
@@ -32673,7 +32706,7 @@ You should be redirected to the song at:<br /><br />
             }
             else {
                 this._pluginOpenButton.textContent = "Open " + (info ? info.name : id);
-                this._pluginStatus.textContent = info ? info.alt + "-style plugin" : "";
+                this._pluginStatus.textContent = info ? (info.alt ? info.alt + "-style plugin" : "CarrotBox plugin") : "";
             }
         }
         _drawSteps(canvas, settings) {
@@ -33837,7 +33870,7 @@ You should be redirected to the song at:<br /><br />
                 const loaded = CarrotPlugins.isLoaded(info.id);
                 const verb = info.kind == "instrument" ? "Load on this channel" : info.kind == "effect" ? "Add to this instrument" : "Open";
                 plugins.children.push({
-                    key: "plugin:" + info.id, name: info.name + (loaded ? "" : " (loading...)"), title: info.alt + "-style " + info.kind + ": " + verb, type: "plugin",
+                    key: "plugin:" + info.id, name: info.name + (loaded ? "" : " (loading...)"), title: (info.alt ? info.alt + "-style " : "") + info.kind + ": " + verb, type: "plugin",
                     action: () => {
                         if (!loaded)
                             return;
@@ -36828,7 +36861,7 @@ You should be redirected to the song at:<br /><br />
                 const loaded = CarrotPlugins.isLoaded(info.id);
                 const kindLabel = info.kind == "instrument" ? "Generator" : info.kind == "effect" ? "Effect" : "Tool";
                 items.push({
-                    key: info.id, group: "Installed plugins", icon: info.icon, color: info.color, name: info.name, sub: (loaded ? "" : "loading… · ") + info.alt + "-style " + kindLabel.toLowerCase() + " — " + info.blurb, badge: kindLabel,
+                    key: info.id, group: "Installed plugins", icon: info.icon, color: info.color, name: info.name, sub: (loaded ? "" : "loading… · ") + (info.alt ? info.alt + "-style " : "CarrotBox ") + kindLabel.toLowerCase() + " — " + info.blurb, badge: kindLabel,
                     run: (shift) => {
                         if (info.kind == "instrument")
                             carrotLoadInstrumentPlugin(this._editor, info.id, shift);
@@ -37037,7 +37070,7 @@ You should be redirected to the song at:<br /><br />
                     }, { primary: true }));
                 }
                 const kind = info.kind == "instrument" ? "Generator" : info.kind == "effect" ? "Effect" : "Tool";
-                this._list.appendChild(HTML.div({ class: "cb-manager-card" }, HTML.div({ class: "cb-launcher-icon", style: `background: ${info.color};` }, info.icon), HTML.div({ style: "flex: 1; min-width: 0;" }, HTML.div(HTML.b(info.name), " ", HTML.span({ class: "cb-badge" }, kind), " ", HTML.span({ class: "cb-badge" }, info.alt + "-style")), HTML.p(info.blurb)), actions));
+                this._list.appendChild(HTML.div({ class: "cb-manager-card" }, HTML.div({ class: "cb-launcher-icon", style: `background: ${info.color};` }, info.icon), HTML.div({ style: "flex: 1; min-width: 0;" }, HTML.div(HTML.b(info.name), " ", HTML.span({ class: "cb-badge" }, kind), info.alt ? " " : "", info.alt ? HTML.span({ class: "cb-badge" }, info.alt + "-style") : ""), HTML.p(info.blurb)), actions));
             }
             const builtins = HTML.div({ class: "cb-hint", style: "margin-top: 6px;" }, "Always built in: " + CARROT_BUILTIN_PLUGINS.map(b => b.name).join(", ") + ".");
             this._list.appendChild(builtins);

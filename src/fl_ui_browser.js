@@ -152,7 +152,7 @@
                 const loaded = CarrotPlugins.isLoaded(info.id);
                 const verb = info.kind == "instrument" ? "Load on this channel" : info.kind == "effect" ? "Add to this instrument" : "Open";
                 plugins.children.push({
-                    key: "plugin:" + info.id, name: info.name + (loaded ? "" : " (loading...)"), title: info.alt + "-style " + info.kind + ": " + verb, type: "plugin",
+                    key: "plugin:" + info.id, name: info.name + (loaded ? "" : " (loading...)"), title: (info.alt ? info.alt + "-style " : "") + info.kind + ": " + verb, type: "plugin",
                     action: () => {
                         if (!loaded)
                             return;

@@ -227,6 +227,9 @@
                 info = tone.flPluginInfo = {
                     freq: startFreq, freqScale: 1.0, gate: true, params: settings.params, sampleRate: synth.samplesPerSecond,
                     midi: startMidi, notePitch: notePitch, velocity: velocity, isNoise: ctx.isNoiseChannel, bpm: song.tempo, key: song.key,
+                    channel: ctx.channelIndex, bar: synth.bar,
+                    // position of this note in the channel (song order), e.g. for lyrics; null for live / preview notes
+                    noteIndex: (tone.note != null && ctx.channelIndex != undefined) ? FLSynth.noteOrderIndex(song, ctx.channelIndex, synth.bar, tone.note) : null,
                 };
                 try {
                     tone.flVoice = plugin.createVoice(settings.params, info);
@@ -261,6 +264,28 @@
             }
             tone.expression = expressionStart;
             tone.expressionDelta = (expressionEnd - expressionStart) / ctx.roundedSamplesPerTick;
+        }
+        // How many notes come before `note` in this channel, in song order (bars, then start time).
+        static noteOrderIndex(song, channelIndex, bar, note) {
+            const channel = song.channels[channelIndex];
+            if (!channel)
+                return null;
+            let count = 0;
+            for (let b = 0; b < bar && b < song.barCount; b++) {
+                const pattern = song.getPattern(channelIndex, b);
+                if (pattern)
+                    count += pattern.notes.length;
+            }
+            const pattern = song.getPattern(channelIndex, bar);
+            if (pattern) {
+                for (const other of pattern.notes) {
+                    if (other == note)
+                        break;
+                    if (other.start <= note.start)
+                        count++;
+                }
+            }
+            return count;
         }
         static pluginSynth(synth, bufferIndex, runLength, tone, instrumentState) {
             const voice = tone.flVoice;

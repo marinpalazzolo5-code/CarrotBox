@@ -27,8 +27,16 @@
             blurb: "Sketch ideas fast: draw a melody line and it snaps to your scale, build chord progressions, bass lines and arps, then drop them straight into patterns.",
         },
         {
+            id: "utawa", name: "Utawa", kind: "instrument", file: "plugins/utawa.js", alt: "VOCALOID 6", icon: "Ut", color: "#ff7eb6", sizeKB: 49,
+            blurb: "Singing synthesizer: type lyrics (English or Japanese romaji) and every note sings the next syllable, with consonants, vowels, vibrato, scoops, breath, choir unison and nine voice presets.",
+        },
+        {
             id: "liveloops", name: "Live Loops", kind: "tool", file: "plugins/liveloops.js", alt: "GarageBand Live Loops", icon: "LL", color: "#2ecc71", sizeKB: 44,
             blurb: "A 16 x 16 loop launcher with 1,248 loops in 24 genres, composed at your song's tempo and key. Launch cells and scenes, then record the performance into the song.",
+        },
+        {
+            id: "bouncify", name: "Bouncify", kind: "tool", file: "plugins/bouncify.js", icon: "Bc", color: "#ffd166", sizeKB: 19,
+            blurb: "Makes a lead, bass or any part bouncy: staccato, swing, octave hops, accents, pitch scoops, bouncing-ball echoes, chops, pushes and an optional sidechain pump. Eight styles, one undo step.",
         },
         {
             id: "mangler", name: "Mangler FX", kind: "effect", file: "plugins/mangler.js", alt: "UGFX", icon: "Mg", color: "#f78c6c", sizeKB: 20,

@@ -1857,7 +1857,7 @@
                 const loaded = CarrotPlugins.isLoaded(info.id);
                 const kindLabel = info.kind == "instrument" ? "Generator" : info.kind == "effect" ? "Effect" : "Tool";
                 items.push({
-                    key: info.id, group: "Installed plugins", icon: info.icon, color: info.color, name: info.name, sub: (loaded ? "" : "loading… · ") + info.alt + "-style " + kindLabel.toLowerCase() + " — " + info.blurb, badge: kindLabel,
+                    key: info.id, group: "Installed plugins", icon: info.icon, color: info.color, name: info.name, sub: (loaded ? "" : "loading… · ") + (info.alt ? info.alt + "-style " : "CarrotBox ") + kindLabel.toLowerCase() + " — " + info.blurb, badge: kindLabel,
                     run: (shift) => {
                         if (info.kind == "instrument")
                             carrotLoadInstrumentPlugin(this._editor, info.id, shift);
@@ -2066,7 +2066,7 @@
                     }, { primary: true }));
                 }
                 const kind = info.kind == "instrument" ? "Generator" : info.kind == "effect" ? "Effect" : "Tool";
-                this._list.appendChild(HTML.div({ class: "cb-manager-card" }, HTML.div({ class: "cb-launcher-icon", style: `background: ${info.color};` }, info.icon), HTML.div({ style: "flex: 1; min-width: 0;" }, HTML.div(HTML.b(info.name), " ", HTML.span({ class: "cb-badge" }, kind), " ", HTML.span({ class: "cb-badge" }, info.alt + "-style")), HTML.p(info.blurb)), actions));
+                this._list.appendChild(HTML.div({ class: "cb-manager-card" }, HTML.div({ class: "cb-launcher-icon", style: `background: ${info.color};` }, info.icon), HTML.div({ style: "flex: 1; min-width: 0;" }, HTML.div(HTML.b(info.name), " ", HTML.span({ class: "cb-badge" }, kind), info.alt ? " " : "", info.alt ? HTML.span({ class: "cb-badge" }, info.alt + "-style") : ""), HTML.p(info.blurb)), actions));
             }
             const builtins = HTML.div({ class: "cb-hint", style: "margin-top: 6px;" }, "Always built in: " + CARROT_BUILTIN_PLUGINS.map(b => b.name).join(", ") + ".");
             this._list.appendChild(builtins);

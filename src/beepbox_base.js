@@ -8952,7 +8952,7 @@ var beepbox = (function (exports) {
             if (instrument.type >= 9 && instrument.type <= 13) {
                 FLSynth.computeTone(this, song, instrument, instrumentState, tone, {
                     intervalStart, intervalEnd, fadeExpressionStart, fadeExpressionEnd, chordExpressionStart, chordExpressionEnd,
-                    envelopeStarts, envelopeEnds, roundedSamplesPerTick, isNoiseChannel, released, shouldFadeOutFast, noteFilterExpression,
+                    envelopeStarts, envelopeEnds, roundedSamplesPerTick, isNoiseChannel, released, shouldFadeOutFast, noteFilterExpression, channelIndex,
                 });
             }
             else if (instrument.type == 1) {

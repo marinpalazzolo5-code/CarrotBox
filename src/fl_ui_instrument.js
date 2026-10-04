@@ -391,7 +391,7 @@
             }
             else {
                 this._pluginOpenButton.textContent = "Open " + (info ? info.name : id);
-                this._pluginStatus.textContent = info ? info.alt + "-style plugin" : "";
+                this._pluginStatus.textContent = info ? (info.alt ? info.alt + "-style plugin" : "CarrotBox plugin") : "";
             }
         }
         _drawSteps(canvas, settings) {
