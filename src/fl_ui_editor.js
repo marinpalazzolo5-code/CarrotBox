@@ -292,6 +292,8 @@
         const doc = editor.doc;
         if (flTypingInField(event))
             return true;
+        if (CarrotFLStudio.handleKey(editor, event))
+            return true;
         const ctrl = event.ctrlKey || event.metaKey;
         switch (event.key) {
             case "F5":

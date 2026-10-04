@@ -7982,6 +7982,9 @@ var beepbox = (function (exports) {
             this.playheadInternal += this.bar - oldBar;
         }
         getNextBar() {
+            // CarrotBox FL Studio mode: PAT loops the selected bar
+            if (this.flPatternMode != null && !this.isRecording && this.flPatternMode < this.song.barCount)
+                return this.flPatternMode;
             let nextBar = this.bar + 1;
             if (this.isRecording) {
                 if (nextBar >= this.song.barCount) {
@@ -22816,6 +22819,7 @@ You should be redirected to the song at:<br /><br />
     //@@INCLUDE fl_ui_plugins.js@@
     //@@INCLUDE fl_ui_extras.js@@
     //@@INCLUDE fl_hardware.js@@
+    //@@INCLUDE fl_ui_flstudio.js@@
     //@@INCLUDE fl_ui_editor.js@@
 
     const hideSelectMenuTitlesInOptions = !isOnMac;

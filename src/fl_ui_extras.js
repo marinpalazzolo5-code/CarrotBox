@@ -8,6 +8,7 @@
         toasts: true,
         playingTitle: true,
         modernUI: false,
+        flStudioUI: false,
         uiSounds: true,
         uiSoundVolume: 0.35,
         extraShortcuts: true,
@@ -44,6 +45,8 @@
         const root = document.documentElement;
         root.classList.toggle("carrot-modern", !!CarrotSettings.get("modernUI"));
         root.classList.toggle("carrot-reduce-motion", !!CarrotSettings.get("reduceMotion"));
+        if (typeof CarrotFLStudio != "undefined" && CarrotFLStudio.editor)
+            CarrotFLStudio.apply();
         const container = document.getElementById("beepboxEditorContainer");
         const scale = CarrotSettings.get("uiScale") / 100;
         if (container)
@@ -289,7 +292,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
                     doc.synth.metronomeVolume = v;
                 } });
             const section = (title, ...rows) => CarrotUI.section(title, ...rows);
-            this.setBody(HTML.div(section("Appearance", row("Modern UI", "An optional polished skin: rounded panels, softer shadows, smoother controls. Off = classic BeepBox look.", t("modernUI")), row("Interface size", "Zooms the whole editor.", scale), row("Color theme", "18 themes, including FL Studio style ones.", CarrotUI.button("Choose…", () => {
+            this.setBody(HTML.div(section("Appearance", row("FL Studio interface", "A full-window FL Studio style workspace: menu strip and hint bar, PAT / SONG, transport, LCD tempo, channel rack (F6), mixer (F9), FL colors and F-keys.", t("flStudioUI")), row("Modern UI", "An optional polished skin: rounded panels, softer shadows, smoother controls. Off = classic BeepBox look.", t("modernUI")), row("Interface size", "Zooms the whole editor.", scale), row("Color theme", "18 themes, including FL Studio style ones.", CarrotUI.button("Choose…", () => {
                 this.close();
                 editor._openPrompt("flTheme");
             })), row("Layout", "BeepBox's layouts (wide, tall, focus…).", CarrotUI.button("Choose…", () => {
@@ -367,6 +370,9 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
                     ]],
                 ["Views & windows", [
                         [k("F5"), "BeepBox grid ⇄ FL playlist"], [k("F8"), "Sound browser"], [k("B"), "Sound browser"], [k("F9"), "Master effects"], [k("Tab"), "Plugin launcher"], [k("E"), "Edit current plugin / sample"], [k("Esc"), "Close window"],
+                    ]],
+                ["FL Studio mode", [
+                        [k("F6"), "Channel rack"], [k("F7"), "Piano roll"], [k("F9"), "Mixer (instead of master effects)"], [k("F10"), "Settings"], [k("F1"), "This list"], [k("L"), "Pattern / song mode"],
                     ]],
                 ["Tools", [
                         [k("K"), "Drum kit / sound kit loader"], [k("G"), "Lead / melody generator"], [k(","), "CarrotBox settings"], [k("?"), "This list"], [k("Ctrl", "S"), "Export song"], [k("Ctrl", "O"), "Import song"],
@@ -1478,6 +1484,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
     // ----------------------------------------------------------- editor setup
     function carrotInitEditor(editor) {
         const doc = editor.doc;
+        CarrotFLStudio.install(editor);
         carrotApplySettings();
         carrotInstallUISounds();
         // Second toolbar row: kits, plugins, recorder, generator.
