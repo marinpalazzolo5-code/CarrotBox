@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>CarrotBox</title>
+	<meta name="application-name" content="CarrotBox" />
+	<meta name="description" content="CarrotBox is BeepBox with a playlist view, samples and sound kits, FL Studio style effects and six built-in-style plugins: Swarm, Prism, Seedling, Chop Shop, Sketchpad and Mangler FX." />
+	<meta name="theme-color" content="#444444" />
+	<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M32 58C26 40 24 28 26 22c3-6 11-6 13 0 2 6 0 18-7 36z' fill='%23ff8a1f'/%3E%3Cpath d='M28 6l4 10 4-10 3 11 8-6-5 11-10-1-10 1-5-11 8 6z' fill='%2347b85a'/%3E%3C/svg%3E" />
+	<link href="https://fonts.googleapis.com/css?family=Roboto" rel="stylesheet" media="none" onload="if (this.media != 'all') this.media='all';" />
+	<style type="text/css">
+		html {
+			background: var(--page-margin, black);
+			overflow-x: hidden;
+			font-size: large;
+			font-family: 'Roboto', sans-serif;
+			line-height: 1.3;
+			color: var(--primary-text, white);
+		}
+		body {
+			margin: auto;
+			overflow-x: hidden;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			align-content: center;
+		}
+		#beepboxEditorContainer {
+			min-height: 645px;
+			overflow: auto;
+			background: var(--editor-background, black);
+			width: 100%;
+			max-width: 710px;
+			padding-left: 30px;
+			padding-right: 30px;
+		}
+		#text-content {
+			overflow: auto;
+			background: var(--editor-background, black);
+			width: 100%;
+			max-width: 710px;
+			padding-left: 30px;
+			padding-right: 30px;
+			box-sizing: border-box;
+		}
+		h1 {
+			font-size: 1.7rem;
+			text-align: center;
+			margin-top: 0.5em;
+			margin-bottom: 0.5em;
+		}
+		h2 {
+			font-size: 1.4rem;
+			text-align: center;
+			margin-top: 1em;
+			margin-bottom: 0.5em;
+		}
+		a {
+			color: var(--link-accent, #98f);
+		}
+		kbd {
+			font-family: inherit;
+			padding: 0 4px;
+			border-radius: 3px;
+			background: var(--ui-widget-background, #444);
+		}
+		@media (max-width: 710px) {
+			p, ul { margin: 1em 0.5em; }
+		}
+	</style>
+</head>
+<body>
+	<div id="beepboxEditorContainer">
+		<noscript>Sorry, CarrotBox requires a JavaScript-enabled browser.</noscript>
+	</div>
+	<div id="text-content">
+		<h1>CarrotBox</h1>
+		<p>
+			CarrotBox is <a href="https://github.com/johnnesky/beepbox" target="_blank">BeepBox</a> (by John Nesky, MIT license) with a playlist view, samples, sound kits,
+			FL Studio style effects and a set of plugins, while keeping BeepBox's simple layout. Everything you knew from BeepBox still works and old song links still open.
+		</p>
+		<h2>What's new</h2>
+		<ul>
+			<li><b>Two views.</b> The <b>View</b> button (or <kbd>F5</kbd>) switches between BeepBox's pattern grid and a <b>Playlist</b>: one continuous timeline whose clips show their notes. <kbd>Ctrl</kbd>+scroll zooms, <kbd>Alt</kbd>+scroll changes track height, drag clips to move them (<kbd>Ctrl</kbd>/<kbd>&#8984;</kbd>-drag copies), drag a clip's right edge to repeat it, right-click deletes, double-click makes a pattern and dragging in the ruler sets the loop.</li>
+			<li><b>Single notes in chords.</b> Drag the end of one note inside a chord to change only that note. Notes may overlap like in a piano roll. Hold <kbd>Alt</kbd> while dragging to ignore snapping.</li>
+			<li><b>Ghost notes.</b> The ghost button above the piano roll shows the other channels' notes behind the current one. <kbd>Alt</kbd>+click a ghost note to jump to its channel.</li>
+			<li><b>Samples.</b> <b>Sampler</b>, <b>Slicex</b> (chop a loop across the keyboard), <b>FPC</b> (12 drum pads) and <b>3x Osc</b>, plus a <b>Sound Browser</b> (<kbd>F8</kbd>) with hundreds of built-in sounds and your own kits (folders, files or .zip).</li>
+			<li><b>Plugins</b> (<kbd>Tab</kbd>): <b>Swarm</b> (hybrid synth), <b>Prism</b> (wavetable synth), <b>Seedling</b> (grow sounds from DNA), <b>Chop Shop</b> (sample chopper with key and tempo matching), <b>Sketchpad</b> (draw melodies, build chords, bass and arps) and <b>Mangler FX</b> (macro effect rack). Install the ones you want in the Plugin Manager.</li>
+			<li><b>Effects.</b> Parametric EQ 2, Gross Beat and Soundgoodizer on any instrument or on the master (<kbd>F9</kbd>).</li>
+			<li><b>Tools.</b> Lead / melody generator (<kbd>G</kbd>), audio recorder, metronome, color themes and an optional modern skin. Press <kbd>?</kbd> for every shortcut.</li>
+			<li><b>Saving.</b> Song URLs remember everything except audio files. Use <b>File &gt; Save Project + Samples</b> to make a .json that includes your samples, and drop that file on the page to open it.</li>
+		</ul>
+		<h2>BeepBox basics</h2>
+		<p>Click the gray rows to add notes, and click above or below a note to make a chord. Drag horizontally on a note to change its length, vertically to bend its pitch. The numbered boxes (or playlist clips) choose which pattern plays in each bar.</p>
+		<ul>
+			<li><kbd>Space</kbd>: play/pause, <kbd>Shift</kbd>+<kbd>Space</kbd>: play from the mouse</li>
+			<li><kbd>Z</kbd>/<kbd>Y</kbd>: undo/redo, <kbd>C</kbd>/<kbd>V</kbd>: copy/paste</li>
+			<li><kbd>0</kbd>-<kbd>9</kbd>: set pattern number, <kbd>Enter</kbd>: insert bar, <kbd>Backspace</kbd>: delete bars</li>
+			<li><kbd>[</kbd>/<kbd>]</kbd>: move playhead, <kbd>F5</kbd>: switch view, <kbd>F8</kbd>: sound browser, <kbd>F9</kbd>: master effects, <kbd>Tab</kbd>: plugins, <kbd>Esc</kbd>: close the top window</li>
+		</ul>
+		<p style="font-size: small; opacity: 0.7;">
+			Built-in sounds are generated by this page; no FL Studio content is included. The plugins are original CarrotBox plugins inspired by the workflows of popular commercial ones. BeepBox and CarrotBox are MIT licensed.
+		</p>
+	</div>
+	<script type="text/javascript" src="carrotbox_editor.js"></script>
+	<script type="text/javascript">
+		var editor = new beepbox.SongEditor(document.getElementById("beepboxEditorContainer"));
+	</script>
+</body>
+</html>
