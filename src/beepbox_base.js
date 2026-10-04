@@ -10620,6 +10620,8 @@ var beepbox = (function (exports) {
     //@@INCLUDE fl_samples.js@@
     //@@INCLUDE fl_soundfactory.js@@
     //@@INCLUDE fl_soundpacks.js@@
+    //@@INCLUDE fl_soundpacks2.js@@
+    //@@INCLUDE fl_loops.js@@
     //@@INCLUDE fl_dsp.js@@
     //@@INCLUDE fl_plugins.js@@
     //@@INCLUDE fl_leadgen.js@@
@@ -24546,6 +24548,7 @@ You should be redirected to the song at:<br /><br />
     exports.FLConfig = FLConfig;
     exports.FLSampleBank = FLSampleBank;
     exports.FLSoundFactory = FLSoundFactory;
+    exports.FLLoops = FLLoops;
     exports.FLKitLibrary = FLKitLibrary;
     exports.CarrotPlugins = CarrotPlugins;
     exports.CarrotDSP = CarrotDSP;

@@ -27,6 +27,10 @@
             blurb: "Sketch ideas fast: draw a melody line and it snaps to your scale, build chord progressions, bass lines and arps, then drop them straight into patterns.",
         },
         {
+            id: "liveloops", name: "Live Loops", kind: "tool", file: "plugins/liveloops.js", alt: "GarageBand Live Loops", icon: "LL", color: "#2ecc71", sizeKB: 44,
+            blurb: "A 16 x 16 loop launcher with 1,248 loops in 24 genres, composed at your song's tempo and key. Launch cells and scenes, then record the performance into the song.",
+        },
+        {
             id: "mangler", name: "Mangler FX", kind: "effect", file: "plugins/mangler.js", alt: "UGFX", icon: "Mg", color: "#f78c6c", sizeKB: 20,
             blurb: "Creative multi-effect rack: chain up to 8 effects (distortion, crusher, filter sweeps, chorus, phaser, flanger, delay, reverb, glitch repeats, tape stop...) with macros and presets.",
         },
@@ -54,10 +58,26 @@
             catch (error) { }
             if (!Array.isArray(ids))
                 ids = CARROT_PLUGIN_CATALOG.map(p => p.id);
+            else {
+                // Plugins added to CarrotBox after the list was saved are installed by default too.
+                let seen = null;
+                try {
+                    seen = JSON.parse(window.localStorage.getItem("carrotPluginsSeen") || "null");
+                }
+                catch (error) { }
+                if (!Array.isArray(seen))
+                    seen = ["swarm", "prism", "seedling", "chopshop", "sketchpad", "mangler"];
+                const fresh = CARROT_PLUGIN_CATALOG.map(p => p.id).filter(id => !seen.includes(id) && !ids.includes(id));
+                if (fresh.length > 0) {
+                    ids = ids.concat(fresh);
+                    CarrotPlugins._saveInstalled(ids);
+                }
+            }
             return ids.filter(id => CarrotPlugins.info(id) != null);
         }
         static _saveInstalled(ids) {
             try {
+                window.localStorage.setItem("carrotPluginsSeen", JSON.stringify(CARROT_PLUGIN_CATALOG.map(p => p.id)));
                 window.localStorage.setItem("carrotPluginsInstalled", JSON.stringify(ids));
             }
             catch (error) { }

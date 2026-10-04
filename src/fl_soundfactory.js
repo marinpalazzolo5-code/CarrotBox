@@ -110,29 +110,49 @@
     }
     // Tiny Schroeder reverb for "verb" variants.
     function flReverb(buffer, mix = 0.25, decaySeconds = 1.2, tailSeconds = 0.8) {
+        // Four damped combs into two allpasses (unrolled for speed; same output as the plain loop).
         const out = new Float32Array(buffer.length + Math.floor(FL_SR * tailSeconds));
         out.set(buffer);
-        const combs = [1557, 1617, 1491, 1422].map(d => ({ d, line: new Float32Array(d), i: 0, g: Math.pow(0.001, d / (FL_SR * decaySeconds)), lp: 0 }));
-        const aps = [225, 556].map(d => ({ d, line: new Float32Array(d), i: 0 }));
+        const g = (d) => Math.pow(0.001, d / (FL_SR * decaySeconds));
+        const c0 = new Float32Array(1557), c1 = new Float32Array(1617), c2 = new Float32Array(1491), c3 = new Float32Array(1422);
+        const g0 = g(1557), g1 = g(1617), g2 = g(1491), g3 = g(1422);
+        const a0 = new Float32Array(225), a1 = new Float32Array(556);
+        let i0 = 0, i1 = 0, i2 = 0, i3 = 0, j0 = 0, j1 = 0, lp0 = 0, lp1 = 0, lp2 = 0, lp3 = 0;
+        const dry = 1 - mix * 0.5;
+        const inputLength = buffer.length;
         for (let n = 0; n < out.length; n++) {
-            const x = n < buffer.length ? buffer[n] : 0;
-            let wet = 0;
-            for (const c of combs) {
-                const y = c.line[c.i];
-                c.lp = y * 0.7 + c.lp * 0.3;
-                c.line[c.i] = x + c.lp * c.g;
-                c.i = (c.i + 1) % c.d;
-                wet += y;
-            }
-            wet *= 0.25;
-            for (const a of aps) {
-                const y = a.line[a.i];
-                const v = wet + y * 0.5;
-                a.line[a.i] = v;
-                a.i = (a.i + 1) % a.d;
-                wet = y - v * 0.5;
-            }
-            out[n] = out[n] * (1 - mix * 0.5) + wet * mix;
+            const x = n < inputLength ? buffer[n] : 0;
+            const y0 = c0[i0], y1 = c1[i1], y2 = c2[i2], y3 = c3[i3];
+            lp0 = y0 * 0.7 + lp0 * 0.3;
+            c0[i0] = x + lp0 * g0;
+            if (++i0 == 1557)
+                i0 = 0;
+            lp1 = y1 * 0.7 + lp1 * 0.3;
+            c1[i1] = x + lp1 * g1;
+            if (++i1 == 1617)
+                i1 = 0;
+            lp2 = y2 * 0.7 + lp2 * 0.3;
+            c2[i2] = x + lp2 * g2;
+            if (++i2 == 1491)
+                i2 = 0;
+            lp3 = y3 * 0.7 + lp3 * 0.3;
+            c3[i3] = x + lp3 * g3;
+            if (++i3 == 1422)
+                i3 = 0;
+            let wet = (y0 + y1 + y2 + y3) * 0.25;
+            let y = a0[j0];
+            let v = wet + y * 0.5;
+            a0[j0] = v;
+            if (++j0 == 225)
+                j0 = 0;
+            wet = y - v * 0.5;
+            y = a1[j1];
+            v = wet + y * 0.5;
+            a1[j1] = v;
+            if (++j1 == 556)
+                j1 = 0;
+            wet = y - v * 0.5;
+            out[n] = out[n] * dry + wet * mix;
         }
         return out;
     }
@@ -395,7 +415,7 @@
         },
         // --------------------------------------------------- pitched one-shots
         bass808(p, r) {
-            const f0 = 65.406;
+            const f0 = p.f || 65.406;
             const out = flBuf(p.len || 3);
             let phase = 0;
             const lp = p.lp ? flLP(p.lp) : null;
@@ -819,6 +839,8 @@
             return flKits;
         }
         static getInfo(key) {
+            if (key && key.startsWith("ll/"))
+                return FLLoops.infoForKey(key);
             if (!FLSoundFactory._byKey) {
                 FLSoundFactory._byKey = new Map();
                 for (const item of flCatalog)
@@ -829,6 +851,8 @@
         static render(key) {
             if (FLSoundFactory._cache.has(key))
                 return FLSoundFactory._cache.get(key);
+            if (key.startsWith("ll/"))
+                return FLLoops.renderKey(key); // Live Loops keep their own cache (they can be large)
             const info = FLSoundFactory.getInfo(key);
             if (!info)
                 return null;

@@ -469,6 +469,7 @@
                 if (menu.selectedIndex != (v | 0))
                     menu.selectedIndex = v | 0;
             };
+            el.getValue = () => menu.selectedIndex;
             el.menu = menu;
             return el;
         }
@@ -2085,9 +2086,11 @@
             return carrotPluginApi._api;
         carrotPluginApi._api = {
             HTML, SVG, Config, FLConfig, CarrotDSP, CarrotADSR, CarrotSVF, CarrotBiquad, CarrotDelayLine, CarrotFX, CarrotUI,
-            CarrotWavetable, CarrotWavetableBank, FLSampleBank, FLSoundFactory, FLKitLibrary, flToast, flMidiName, flSetupCanvas, flCss, flResolve, flCloneJson,
+            CarrotWavetable, CarrotWavetableBank, FLSampleBank, FLSoundFactory, FLKitLibrary, FLLoops, flToast, flMidiName, flSetupCanvas, flCss, flResolve, flCloneJson,
             carrotFxRack, carrotWriteNotes, carrotSongScale, carrotSyncOptions, carrotSyncBeats, carrotFormatValue, carrotToNorm, carrotFromNorm,
             CarrotWindows, CarrotPlugins, carrotNewChannel, carrotNameChannel,
+            // song editing (for tools that write into the song)
+            Note, Pattern, Instrument, ChangeGroup, ChangeFL, ChangeBarCount, ChangeChannelBar, ChangeInstrumentsFlags, ChangeNoteAdded, ChangeNoteTruncate, ChangeEnsurePatternExists, ChangePatternNumbers,
             addStyle: (css) => document.head.appendChild(HTML.style({ type: "text/css" }, css)),
         };
         return carrotPluginApi._api;
