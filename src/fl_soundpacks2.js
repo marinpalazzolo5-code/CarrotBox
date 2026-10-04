@@ -518,6 +518,8 @@
         return flFades(flTrimSilence(result), 0.2, 15);
     };
     // ------------------------------------------------------------- catalog
+    // The recipes below are shared with Sound Library 3 (fl_soundpacks3.js).
+    let FLPackKit = null;
     {
         const PK = "Packs";
         const hz = (midi) => 440 * Math.pow(2, (midi - 69) / 12);
@@ -1141,4 +1143,5 @@
             flAdd(FO + "/" + name + " 01", gen, params);
             flAdd(FO + "/" + name + " 02", gen, jitter(params, "foley" + name, 0.15));
         }
+        FLPackKit = { PK, hz, pad2, merge, jitter, KICK, SNARE, CLAP, HAT, OHAT, applyCharacter, PERC, BASS, MELODIC, FXR, VOX };
     }

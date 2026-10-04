@@ -392,7 +392,7 @@
                 input.remove();
                 if (files.length == 0)
                     return;
-                const loader = CarrotKitLoader.open(editor, 0);
+                const loader = CarrotKitLoader.open(editor, "load");
                 loader._import(files);
             });
             document.body.appendChild(input);

@@ -14640,6 +14640,8 @@ FLKitLibrary._loadPromise = null;
         return flFades(flTrimSilence(result), 0.2, 15);
     };
     // ------------------------------------------------------------- catalog
+    // The recipes below are shared with Sound Library 3 (fl_soundpacks3.js).
+    let FLPackKit = null;
     {
         const PK = "Packs";
         const hz = (midi) => 440 * Math.pow(2, (midi - 69) / 12);
@@ -15263,9 +15265,492 @@ FLKitLibrary._loadPromise = null;
             flAdd(FO + "/" + name + " 01", gen, params);
             flAdd(FO + "/" + name + " 02", gen, jitter(params, "foley" + name, 0.15));
         }
+        FLPackKit = { PK, hz, pad2, merge, jitter, KICK, SNARE, CLAP, HAT, OHAT, applyCharacter, PERC, BASS, MELODIC, FXR, VOX };
     }
 
 // ---- end fl_soundpacks2.js ----
+// ---- begin fl_soundpacks3.js ----
+    // ======================================================================
+    // CarrotBox: Sound Library 3 - 42 more genre packs with 72 original,
+    // synthesized sounds each (3,000+ in all): breakcore, underground, UK and
+    // NY drill, rock, indie, webcore, digicore, rage, plugg, metal, jazz and
+    // many more. Every genre also gets two drum kits (and so do the Sound
+    // Library 2 genres that had none), plus FPC presets for all of them.
+    // Like the other libraries, nothing here is recorded audio: every sound
+    // is generated on demand from the recipes shared with Sound Library 2.
+    // ======================================================================
+    {
+        const K = FLPackKit;
+        const { PK, hz, pad2, merge, jitter, applyCharacter, PERC, BASS, MELODIC, FXR, VOX } = K;
+        // ---------------------------------------------- more characters
+        const KICK = Object.assign({}, K.KICK, {
+            Deep: { body: { start: 0.85, end: 0.88, decay: 1.5 } },
+            Room: { room: 0.35 },
+            Rumble: { body: { decay: 2.4, end: 0.85 }, room: 0.3, lp: 1200, len: 2.2 },
+            Vinyl: { dust: 0.05, lp: 2400, crush: 10 },
+            Crunchy: { crush: 9, drive: 4 },
+            Glitch: { crush: 6, downsample: 3, drive: 2 },
+            Bit: { crush: 5, downsample: 4 },
+            Blown: { drive: 12, lp: 5000 },
+            Gabber: { drive: 14, body: { decay: 1.4 }, len: 1.4, click: 0.9 },
+            Snap: { click: 0.9, body: { decay: 0.35 } },
+        });
+        const SNARE = Object.assign({}, K.SNARE, {
+            Gated: { room: 0.6, roomDecay: 0.35 },
+            Glitch: { crush: 6, downsample: 3 },
+            Trash: { drive: 6, crush: 9 },
+            Ghost: { noise: { amp: 0.6 }, body: { amp: 0.6 } },
+            Metal: { ring: { amp: 1.1, ratio: 2.7, decay: 0.08 } },
+            Piccolo: { body: { start: 1.5, end: 1.5 }, noise: { hp: 1.3 } },
+            Blown: { drive: 10, lp: 7000 },
+            Bit: { crush: 5, downsample: 4 },
+        });
+        const CLAP = Object.assign({}, K.CLAP, {
+            Glitch: { crush: 6, downsample: 3 },
+            Big: { bursts: 7, spacing: 1.4, room: 0.3, tail: 1.6 },
+        });
+        const HAT = Object.assign({}, K.HAT, {
+            Glitch: { crush: 6, downsample: 3 },
+            Digital: { crush: 8, downsample: 2, ringMod: true },
+            Trashy: { noise: 0.75, ringMod: true, bp: 0.8 },
+            Bright: { bp: 1.3, hp: 1.25, sizzle: 0.35 },
+        });
+        const OHAT = Object.assign({}, K.OHAT, {
+            Glitch: { crush: 6, downsample: 2 },
+            Washy: { decay: 2.2, len: 2, sizzle: 0.4 },
+        });
+        // ---------------------------------------------- drum families
+        const FAM = {
+            trap: {
+                kick: { body: { start: 230, end: 50, sweep: 0.022, decay: 0.42 }, click: 0.35, drive: 1.4, len: 1 },
+                snare: { body: { start: 260, end: 190, sweep: 0.01, decay: 0.06 }, noise: { amp: 1, hp: 2200, lp: 13000, decay: 0.14 }, click: 0.2, len: 0.6 },
+                clap: { freq: 1250, q: 1.9, tail: 0.15, bursts: 4 },
+                hat: { f: 220, decay: 0.035, bp: 10500, hp: 8000, noise: 0.45, len: 0.18 },
+                ohat: { f: 220, decay: 0.28, bp: 10000, hp: 7200, noise: 0.5, len: 0.9 },
+                tom: { body: { start: 200, end: 120, sweep: 0.04, decay: 0.3 }, noise: { amp: 0.1, hp: 300, lp: 4000, decay: 0.03 }, len: 0.7 },
+                kicks: ["Punch", "Sub", "Knock", "Hard", "Tight", "Boom", "Long", "Clicky", "Distorted", "Deep"],
+                snares: ["Tight", "Crack", "Snappy", "Bright", "Room", "Verb", "Rim", "Fat", "Dark"],
+                claps: ["Room", "Tight", "Layered", "Wide", "Snappy"],
+                hats: ["Crisp", "Tight", "Sizzle", "Metal", "Soft", "Dark", "Bright", "Shuffle"],
+                ohats: ["Short", "Long", "Bright", "Trashy"],
+            },
+            acoustic: {
+                kick: { body: { start: 120, end: 55, sweep: 0.025, decay: 0.22 }, noise: { amp: 0.35, bp: 3000, hp: 900, lp: 8000, decay: 0.01 }, click: 0.5, room: 0.18, len: 0.8 },
+                snare: { body: { start: 210, end: 180, sweep: 0.01, decay: 0.12, amp: 1.1 }, ring: { ratio: 1.62, amp: 0.4, decay: 0.06 }, noise: { amp: 0.9, hp: 1500, lp: 11000, decay: 0.18 }, click: 0.3, room: 0.25, len: 0.8 },
+                clap: { freq: 1100, q: 1.5, tail: 0.18, bursts: 4, room: 0.25 },
+                hat: { f: 320, decay: 0.05, bp: 8000, hp: 6000, noise: 0.35, len: 0.3, sizzle: 0.2 },
+                ohat: { f: 320, decay: 0.45, bp: 7500, hp: 5500, noise: 0.4, len: 1.4, sizzle: 0.3 },
+                tom: { body: { start: 160, end: 100, sweep: 0.06, decay: 0.4 }, noise: { amp: 0.2, hp: 200, lp: 5000, decay: 0.04 }, room: 0.2, len: 1 },
+                kicks: ["Round", "Punch", "Boom", "Tight", "Thump", "Room", "Dusty", "Deep", "Clicky", "Hard"],
+                snares: ["Body", "Fat", "Crack", "Room", "Verb", "Rim", "Ghost", "Piccolo", "Bright"],
+                claps: ["Room", "Wide", "Layered", "Big", "Tight"],
+                hats: ["Crisp", "Soft", "Dark", "Sizzle", "Tight", "Shuffle", "Bright", "Dusty"],
+                ohats: ["Long", "Washy", "Bright", "Short"],
+            },
+            machine: {
+                kick: { body: { start: 300, end: 52, sweep: 0.012, decay: 0.32 }, click: 0.6, drive: 2, len: 0.7 },
+                snare: { body: { start: 230, end: 180, sweep: 0.008, decay: 0.08 }, noise: { amp: 1, hp: 1800, lp: 12000, decay: 0.12 }, click: 0.3, len: 0.5 },
+                clap: { freq: 1200, q: 1.8, tail: 0.14, bursts: 4 },
+                hat: { f: 260, decay: 0.03, bp: 11000, hp: 8500, noise: 0.55, len: 0.15 },
+                ohat: { f: 260, decay: 0.25, bp: 10500, hp: 7500, noise: 0.55, len: 0.8 },
+                tom: { body: { start: 220, end: 140, sweep: 0.03, decay: 0.25 }, click: 0.2, len: 0.6 },
+                kicks: ["Punch", "Hard", "Tight", "Clicky", "Boom", "Thump", "Distorted", "Round", "Rumble", "Snap"],
+                snares: ["Tight", "Crack", "Snappy", "Bright", "Gated", "Body", "Room", "Metal", "Dark"],
+                claps: ["Tight", "Snappy", "Wide", "Big", "Room"],
+                hats: ["Crisp", "Tight", "Metal", "Bright", "Sizzle", "Digital", "Dark", "Soft"],
+                ohats: ["Short", "Bright", "Long", "Trashy"],
+            },
+            breaks: {
+                kick: { body: { start: 150, end: 58, sweep: 0.02, decay: 0.2 }, noise: { amp: 0.4, bp: 2500, hp: 700, lp: 7000, decay: 0.012 }, click: 0.5, room: 0.1, crush: 11, len: 0.6 },
+                snare: { body: { start: 230, end: 200, sweep: 0.01, decay: 0.1 }, ring: { ratio: 1.7, amp: 0.35, decay: 0.05 }, noise: { amp: 1.1, hp: 1600, lp: 10000, decay: 0.15 }, click: 0.4, room: 0.2, crush: 11, len: 0.6 },
+                clap: { freq: 1300, q: 1.6, tail: 0.12, bursts: 4, crush: 10 },
+                hat: { f: 300, decay: 0.045, bp: 8500, hp: 6500, noise: 0.4, len: 0.25, crush: 10 },
+                ohat: { f: 300, decay: 0.35, bp: 8000, hp: 6000, noise: 0.45, len: 1, crush: 10 },
+                tom: { body: { start: 170, end: 110, sweep: 0.05, decay: 0.3 }, noise: { amp: 0.2, hp: 250, lp: 4500, decay: 0.03 }, crush: 11, len: 0.8 },
+                kicks: ["Dusty", "Punch", "Knock", "Thump", "Round", "Vinyl", "Crunchy", "Tight", "Hard", "Room"],
+                snares: ["Crack", "Room", "Dusty", "Snappy", "Fat", "Rim", "Trash", "Ghost", "Verb"],
+                claps: ["Dusty", "Room", "Layered", "Tight", "Wide"],
+                hats: ["Dusty", "Crisp", "Shuffle", "Tight", "Sizzle", "Soft", "Trashy", "Dark"],
+                ohats: ["Trashy", "Short", "Long", "Washy"],
+            },
+            digital: {
+                kick: { body: { start: 260, end: 48, sweep: 0.018, decay: 0.38 }, click: 0.5, drive: 3, crush: 7, downsample: 2, len: 0.9 },
+                snare: { body: { start: 280, end: 200, sweep: 0.01, decay: 0.07 }, noise: { amp: 1, hp: 2500, lp: 12000, decay: 0.12 }, click: 0.3, crush: 6, downsample: 2, len: 0.5 },
+                clap: { freq: 1400, q: 2, tail: 0.12, bursts: 3, crush: 6 },
+                hat: { f: 240, decay: 0.03, bp: 11000, hp: 8000, noise: 0.5, len: 0.15, crush: 6, downsample: 2 },
+                ohat: { f: 240, decay: 0.25, bp: 10000, hp: 7000, noise: 0.5, len: 0.8, crush: 6 },
+                tom: { body: { start: 300, end: 150, sweep: 0.03, decay: 0.2 }, crush: 6, downsample: 2, len: 0.5 },
+                kicks: ["Bit", "Glitch", "Crunchy", "Punch", "Distorted", "Blown", "Sub", "Clicky", "Hard", "Snap"],
+                snares: ["Bit", "Glitch", "Trash", "Snappy", "Crack", "Bright", "Blown", "Tight", "Gated"],
+                claps: ["Glitch", "Tight", "Snappy", "Layered", "Big"],
+                hats: ["Digital", "Glitch", "Crisp", "Metal", "Tight", "Bright", "Trashy", "Sizzle"],
+                ohats: ["Glitch", "Short", "Bright", "Trashy"],
+            },
+            soft: {
+                kick: { body: { start: 110, end: 45, sweep: 0.04, decay: 0.6 }, click: 0.15, room: 0.35, roomDecay: 1.2, len: 1.6 },
+                snare: { body: { start: 190, end: 170, decay: 0.12 }, noise: { amp: 0.7, hp: 1200, lp: 8000, decay: 0.25 }, room: 0.5, roomDecay: 1.2, len: 1.2 },
+                clap: { freq: 1000, q: 1.3, tail: 0.3, bursts: 5, room: 0.5 },
+                hat: { f: 300, decay: 0.06, bp: 7500, hp: 5500, noise: 0.35, len: 0.35, attack: 0.002 },
+                ohat: { f: 300, decay: 0.6, bp: 7000, hp: 5000, noise: 0.35, len: 1.6, sizzle: 0.3 },
+                tom: { body: { start: 110, end: 70, sweep: 0.08, decay: 0.7 }, noise: { amp: 0.25, hp: 150, lp: 3000, decay: 0.08 }, room: 0.5, len: 2 },
+                kicks: ["Sub", "Round", "Deep", "Boom", "Rumble", "Room", "Long", "Thump", "Vinyl", "Dusty"],
+                snares: ["Verb", "Room", "Dark", "Body", "Gated", "Ghost", "Fat", "Dusty", "Rim"],
+                claps: ["Room", "Long", "Wide", "Big", "Layered"],
+                hats: ["Soft", "Dark", "Shuffle", "Crisp", "Dusty", "Sizzle", "Tight", "Metal"],
+                ohats: ["Washy", "Long", "Short", "Bright"],
+            },
+        };
+        // ---------------------------------------------- the genres
+        // percs: 8 PERC recipes; bass / melodic: recipe names or [shown name, recipe, changes]
+        const FX5 = ["Riser", "Impact", "Downlifter", "Reverse Swell", "Sweep"];
+        const GENRES = [
+            { name: "Breakcore", fam: "breaks", key: 62, mods: { kick: { drive: 2 } },
+                percs: ["Rim", "Snap", "Zap Perc", "Laser Perc", "Metal Hit", "Shaker", "Woodblock", "Vinyl Tick"],
+                bass: ["Reese", ["Reese Distorted", "Reese", { drive: 5 }], "808 Distorted", "Wobble", "Hoover", "Sub Bass"],
+                melodic: ["Strings", "Choir", "Piano", ["Glitch Bell", "Bell", { crush: 6, downsample: 2 }], "Supersaw", "Hoover Lead", "Dark Pad", "Square Lead"],
+                fx: ["Stutter Riser", "Zap", "Impact", "Reverse Swell", "Noise Riser"], vox: ["Ah", "Eee", "Hey"] },
+            { name: "Underground UG", fam: "trap", key: 56, post: { dust: 0.02, lp: 9000 }, mods: { kick: { drive: 2.5 } },
+                percs: ["Rim", "Snap", "Cowbell", "Vinyl Tick", "Knock", "Shaker", "Laser Perc", "Metal Hit"],
+                bass: ["808 Long", "808 Distorted", ["808 Blown", "808 Distorted", { drive: 14, lp: 2200, hold: 0.05, decay: 1.0 }], "808 Slide", "808 Punch", "Sub Bass"],
+                melodic: ["Dark Pad", ["Tape Piano", "Piano", { crush: 9 }], "Bell", "Choir", "Tape Keys", "Flute", "Strings", ["Echo Bell", "Bell", { echo: 0.5 }]],
+                fx: ["Riser", "Impact", "Sub Drop", "Reverse Swell", "Texture"], vox: ["Uh", "Ay", "Yeah"] },
+            { name: "UK Drill", fam: "trap", key: 56, mods: { kick: { body: { decay: 0.8 } } },
+                percs: ["Rim", "Snap", "Shaker", "Woodblock", "Clave", "Metal Hit", "Vinyl Tick", "Knock"],
+                bass: ["808 Slide", ["808 Drill", "808 Punch", { drive: 4 }], "808 Long", "808 Distorted", "Sub Bass", ["808 Glide", "808 Slide", { drop: 2.5, sweep: 0.4, hold: 0.2 }]],
+                melodic: ["Strings", "Dark Pad", "Piano", "Choir", "Bell", ["Drill Pluck", "Pluck", { verb: 0.3 }], "Flute", "Glass Keys"],
+                fx: ["Riser", "Impact", "Sub Drop", "Reverse Swell", "Downlifter"], vox: ["Uh", "Ay", "Hey"] },
+            { name: "NY Drill", fam: "trap", key: 55, mods: { kick: { drive: 3, click: 0.5 } },
+                percs: ["Rim", "Snap", "Cowbell", "Shaker", "Clave", "Knock", "Woodblock", "Metal Hit"],
+                bass: ["808 Slide", "808 Distorted", ["808 Bronx", "808 Punch", { drive: 6 }], "808 Long", "Sub Bass", "Reese"],
+                melodic: ["Choir", "Strings", "Piano", "Dark Pad", "Bell", "Vocal Pad", "Brass Stab", "Flute"],
+                fx: ["Riser", "Impact", "Sub Drop", "Downlifter", "Zap"], vox: ["Woah", "Uh", "Hey"] },
+            { name: "Rock", fam: "acoustic", key: 57,
+                percs: ["Tambourine", "Cowbell", "Shaker", "Rim", "Woodblock", "Clave", "Triangle", "Agogo"],
+                bass: ["Finger Bass", ["Pick Bass", "Finger Bass", { drive: 2 }], ["Overdrive Bass", "Finger Bass", { drive: 6 }], "Synth Bass", "Pluck Bass", "Sub Bass"],
+                melodic: [["Power Chord", "Guitar Pluck", { chord: [0, 7, 12], drive: 8 }], ["Clean Guitar", "Guitar Pluck", { verb: 0.2 }], ["Crunch Guitar", "Guitar Pluck", { drive: 4 }], "Organ Stab", "Piano", "Strings", ["Lead Guitar", "Saw Lead", { drive: 5 }], "Brass Stab"],
+                fx: ["Impact", "Riser", "Reverse Swell", "Downlifter", "Noise Riser"], vox: ["Hey", "Yeah", "Woah"] },
+            { name: "Indie", fam: "acoustic", key: 60, post: { room: 0.28 },
+                percs: ["Tambourine", "Shaker", "Cabasa", "Clave", "Woodblock", "Triangle", "Snap", "Glass Tink"],
+                bass: ["Finger Bass", "Pluck Bass", "Synth Bass", "Sub Bass", ["Chorus Bass", "Finger Bass", { chorus: 0.6 }], "Organ Bass"],
+                melodic: [["Jangle Guitar", "Guitar Pluck", { chorus: 0.6, verb: 0.2 }], "Rhodes", "Tape Keys", "Glass Keys", "Bright Pad", "Kalimba", ["Fuzz Guitar", "Guitar Pluck", { drive: 7 }], "Arp Pluck"],
+                fx: ["Reverse Swell", "Sweep", "Texture", "Riser", "Impact"], vox: ["Ooh", "Ah", "Oh"] },
+            { name: "Webcore", fam: "digital", key: 64, post: { room: 0.2 },
+                percs: ["Blip", "Glass Tink", "Laser Perc", "Zap Perc", "Triangle", "Vinyl Tick", "Snap", "Metal Hit"],
+                bass: ["808 Long", "Sub Bass", ["Bit 808", "808 Punch", { crush: 6 }], "FM Bass", "Wobble", "Synth Bass"],
+                melodic: [["Web Bell", "Bell", { echo: 0.5, verb: 0.3 }], "Glass Keys", "Kalimba", "Vocal Pad", "Bright Pad", ["Bit Lead", "Chip Lead", { echo: 0.4 }], "Marimba", ["Dream Keys", "Tape Keys", { verb: 0.4 }]],
+                fx: ["Stutter Riser", "Zap", "Texture", "Reverse Swell", "Sweep"], vox: ["Eee", "Ooh", "Ah"] },
+            { name: "Digicore", fam: "digital", key: 63, mods: { kick: { drive: 5 } },
+                percs: ["Laser Perc", "Zap Perc", "Blip", "Snap", "Rim", "Metal Hit", "Shaker", "Glass Tink"],
+                bass: ["808 Distorted", ["808 Blown", "808 Distorted", { drive: 14, lp: 2200, hold: 0.05, decay: 1.0 }], "808 Slide", "Sub Bass", "Reese", "FM Bass"],
+                melodic: ["Supersaw", ["Hyper Pluck", "Pluck", { drive: 3 }], "Bell", "Saw Lead", "Glass Keys", "Bright Pad", "Chip Lead", ["Detuned Lead", "Saw Lead", { detune: 0.4, voices: 5 }]],
+                fx: ["Stutter Riser", "Zap", "Impact", "Riser", "Noise Riser"], vox: ["Eee", "Hey", "Yeah"] },
+            { name: "Rage", fam: "trap", key: 58, mods: { kick: { drive: 3 } },
+                percs: ["Rim", "Snap", "Laser Perc", "Zap Perc", "Metal Hit", "Shaker", "Cowbell", "Vinyl Tick"],
+                bass: ["808 Distorted", "808 Long", ["808 Rage", "808 Distorted", { drive: 12, decay: 0.9, hold: 0.1, lp: 3000 }], "808 Slide", "Sub Bass", "Reese"],
+                melodic: [["Rage Synth", "Supersaw", { drive: 3 }], "Saw Lead", "Bright Pad", "Hoover Lead", "Bell", "Square Lead", "Chord Stab", "Dark Pad"],
+                fx: ["Riser", "Impact", "Zap", "Stutter Riser", "Sub Drop"], vox: ["Yeah", "Woah", "Hey"] },
+            { name: "Plugg", fam: "trap", key: 61, mods: { hat: { decay: 0.03 } },
+                percs: ["Rim", "Snap", "Shaker", "Vinyl Tick", "Glass Tink", "Triangle", "Woodblock", "Blip"],
+                bass: ["808 Long", "808 Slide", "Sub Bass", "808 Punch", ["808 Soft", "808 Long", { drive: 0.5 }], "FM Bass"],
+                melodic: [["Plugg Bell", "Bell", { verb: 0.25 }], "Glass Keys", "Kalimba", "Flute", "Bright Pad", "Marimba", "Rhodes", "Square Lead"],
+                fx: ["Riser", "Reverse Swell", "Sweep", "Impact", "Downlifter"], vox: ["Ooh", "Yeah", "Ay"] },
+            { name: "Pluggnb", fam: "trap", key: 60,
+                percs: ["Rim", "Snap", "Shaker", "Triangle", "Glass Tink", "Vinyl Tick", "Cabasa", "Woodblock"],
+                bass: ["808 Long", "Sub Bass", "808 Slide", "808 Punch", "FM Bass", "Finger Bass"],
+                melodic: ["Rhodes", "Bright Pad", "Bell", "Glass Keys", "Strings", ["RnB Keys", "Tape Keys", { chorus: 0.5 }], "Guitar Pluck", "Vocal Pad"],
+                fx: FX5, vox: ["Ooh", "Oh", "Yeah"] },
+            { name: "Emo Rap", fam: "trap", key: 57,
+                percs: ["Rim", "Snap", "Shaker", "Tambourine", "Vinyl Tick", "Glass Tink", "Triangle", "Knock"],
+                bass: ["808 Long", "808 Distorted", "808 Slide", "Sub Bass", "808 Punch", "Finger Bass"],
+                melodic: [["Sad Guitar", "Guitar Pluck", { verb: 0.3 }], "Piano", "Strings", "Dark Pad", ["Lo Guitar", "Guitar Pluck", { crush: 9 }], "Bell", "Choir", "Tape Keys"],
+                fx: FX5, vox: ["Oh", "Ooh", "Yeah"] },
+            { name: "Glitchcore", fam: "digital", key: 65, post: { crush: 5 },
+                percs: ["Zap Perc", "Laser Perc", "Blip", "Metal Hit", "Snap", "Vinyl Tick", "Glass Tink", "Rim"],
+                bass: ["808 Distorted", ["Glitch 808", "808 Punch", { crush: 5 }], "Wobble", "Reese", "FM Bass", "Sub Bass"],
+                melodic: [["Glitch Bell", "Bell", { crush: 6, downsample: 3 }], ["Glitch Lead", "Chip Lead", { echo: 0.5 }], "Supersaw", "Saw Lead", "Glass Keys", "Arp Pluck", "Bright Pad", "Hoover Lead"],
+                fx: ["Stutter Riser", "Zap", "Impact", "Noise Riser", "Reverse Swell"], vox: ["Eee", "Ay", "Hey"] },
+            { name: "Nightcore", fam: "machine", key: 66, mods: { kick: { drive: 2.5 } },
+                percs: ["Shaker", "Tambourine", "Snap", "Cowbell", "Blip", "Laser Perc", "Rim", "Cabasa"],
+                bass: ["Synth Bass", "FM Bass", "Sub Bass", "Reese", "Pluck Bass", "808 Punch"],
+                melodic: ["Supersaw", "Piano", "Bright Pad", "Pluck", "Saw Lead", "Bell", "Strings", "Arp Pluck"],
+                fx: ["Riser", "Noise Riser", "Impact", "Sweep", "Downlifter"], vox: ["Eee", "Hey", "Ah"] },
+            { name: "Metal", fam: "acoustic", key: 52, mods: { kick: { click: 0.9, body: { decay: 0.6 } }, snare: { drive: 2 } },
+                kicks: ["Clicky", "Punch", "Tight", "Hard", "Snap", "Thump", "Round", "Room", "Knock", "Boom"],
+                percs: ["Cowbell", "Metal Hit", "Rim", "Woodblock", "Tambourine", "Clave", "Triangle", "Agogo"],
+                bass: [["Metal Bass", "Finger Bass", { drive: 8 }], "Finger Bass", "Synth Bass", ["Drop Bass", "Finger Bass", { drive: 10 }], "Sub Bass", "Pluck Bass"],
+                melodic: [["Chug Guitar", "Guitar Pluck", { chord: [0, 7], drive: 12 }], ["Power Chord", "Guitar Pluck", { chord: [0, 7, 12], drive: 12 }], ["Lead Guitar", "Saw Lead", { drive: 8 }], "Strings", "Choir", "Organ Stab", "Dark Pad", "Piano"],
+                fx: ["Impact", "Riser", "Downlifter", "Reverse Swell", "Sub Drop"], vox: ["Hey", "Ho", "Uh"] },
+            { name: "Punk", fam: "acoustic", key: 57, post: { drive: 1.5 },
+                percs: ["Tambourine", "Cowbell", "Shaker", "Rim", "Woodblock", "Clave", "Snap", "Agogo"],
+                bass: [["Punk Bass", "Finger Bass", { drive: 4 }], "Finger Bass", "Pluck Bass", "Synth Bass", "Sub Bass", "Organ Bass"],
+                melodic: [["Power Chord", "Guitar Pluck", { chord: [0, 7, 12], drive: 9 }], ["Fast Guitar", "Guitar Pluck", { drive: 5 }], "Organ Stab", "Piano", ["Lead Guitar", "Saw Lead", { drive: 5 }], "Chord Stab", "Brass Stab", "Bright Pad"],
+                fx: ["Impact", "Riser", "Downlifter", "Noise Riser", "Reverse Swell"], vox: ["Hey", "Ho", "Oh"] },
+            { name: "Grunge", fam: "acoustic", key: 52, post: { room: 0.3 },
+                percs: ["Tambourine", "Cowbell", "Shaker", "Rim", "Woodblock", "Metal Hit", "Snap", "Knock"],
+                bass: [["Grunge Bass", "Finger Bass", { drive: 6 }], "Finger Bass", "Pluck Bass", "Synth Bass", "Sub Bass", "Organ Bass"],
+                melodic: [["Sludge Guitar", "Guitar Pluck", { chord: [0, 7, 12], drive: 10 }], ["Clean Guitar", "Guitar Pluck", { chorus: 0.5 }], "Organ Stab", "Dark Pad", "Piano", "Strings", ["Fuzz Lead", "Saw Lead", { drive: 7 }], "Tape Keys"],
+                fx: ["Impact", "Reverse Swell", "Downlifter", "Noise Riser", "Texture"], vox: ["Oh", "Yeah", "Uh"] },
+            { name: "Shoegaze", fam: "soft", key: 60, post: { room: 0.6 },
+                percs: ["Tambourine", "Shaker", "Triangle", "Cabasa", "Glass Tink", "Woodblock", "Snap", "Clave"],
+                bass: ["Finger Bass", "Synth Bass", "Sub Bass", ["Fuzz Bass", "Finger Bass", { drive: 5 }], "Pluck Bass", "Organ Bass"],
+                melodic: [["Wall Guitar", "Guitar Pluck", { chord: [0, 7, 12], drive: 6, verb: 0.5, chorus: 0.6 }], "Bright Pad", "Vocal Pad", "Strings", ["Dream Guitar", "Guitar Pluck", { verb: 0.5, chorus: 0.5 }], "Glass Keys", "Choir", "Tape Keys"],
+                fx: ["Reverse Swell", "Texture", "Noise Riser", "Sweep", "Riser"], vox: ["Ooh", "Ah", "Oh"] },
+            { name: "Bedroom Pop", fam: "acoustic", key: 62, post: { dust: 0.015, lp: 8000 },
+                percs: ["Shaker", "Tambourine", "Snap", "Cabasa", "Triangle", "Glass Tink", "Woodblock", "Vinyl Tick"],
+                bass: ["Finger Bass", "Sub Bass", "Synth Bass", "FM Bass", "Pluck Bass", "Organ Bass"],
+                melodic: [["Bedroom Guitar", "Guitar Pluck", { chorus: 0.5 }], "Tape Keys", "Rhodes", "Kalimba", "Glass Keys", "Bright Pad", "Flute", "Marimba"],
+                fx: ["Reverse Swell", "Sweep", "Texture", "Riser", "Downlifter"], vox: ["Ooh", "Ah", "Oh"] },
+            { name: "Jazz", fam: "acoustic", key: 58,
+                kicks: ["Round", "Thump", "Room", "Boom", "Tight", "Deep", "Punch", "Dusty", "Clicky", "Sub"],
+                snares: ["Body", "Room", "Ghost", "Rim", "Verb", "Dark", "Fat", "Piccolo", "Dusty"],
+                hats: ["Soft", "Shuffle", "Dark", "Crisp", "Sizzle", "Dusty", "Tight", "Metal"],
+                percs: ["Rim", "Shaker", "Triangle", "Woodblock", "Clave", "Conga", "Bongo", "Cabasa"],
+                bass: [["Upright Bass", "Finger Bass", { verb: 0.1 }], "Finger Bass", "Organ Bass", "Sub Bass", "FM Bass", "Pluck Bass"],
+                melodic: ["Piano", "Rhodes", ["Muted Trumpet", "Trumpet", { cutoff: 900 }], "Trumpet", "Organ Stab", ["Vibes", "Marimba", { verb: 0.2 }], "Brass Stab", "Flute"],
+                fx: ["Reverse Swell", "Sweep", "Texture", "Impact", "Downlifter"], vox: ["Oh", "Ah", "Ooh"] },
+            { name: "Neo Soul", fam: "acoustic", key: 58, post: { dust: 0.01 },
+                kicks: ["Round", "Dusty", "Thump", "Punch", "Room", "Deep", "Boom", "Tight", "Vinyl", "Sub"],
+                percs: ["Rim", "Shaker", "Snap", "Tambourine", "Conga", "Triangle", "Cabasa", "Vinyl Tick"],
+                bass: ["Finger Bass", "Sub Bass", "FM Bass", "Synth Bass", "Organ Bass", "Pluck Bass"],
+                melodic: ["Rhodes", "Tape Keys", "Piano", "Glass Keys", "Organ Stab", "Strings", "Guitar Pluck", "Bright Pad"],
+                fx: FX5, vox: ["Ooh", "Yeah", "Oh"] },
+            { name: "Gospel", fam: "acoustic", key: 60, post: { room: 0.3 },
+                claps: ["Room", "Big", "Wide", "Layered", "Long"],
+                percs: ["Tambourine", "Shaker", "Rim", "Snap", "Cowbell", "Triangle", "Woodblock", "Clave"],
+                bass: ["Organ Bass", "Finger Bass", "Sub Bass", "Synth Bass", "FM Bass", "Pluck Bass"],
+                melodic: [["Gospel Organ", "Organ Stab", { chorus: 0.4 }], "Piano", "Choir", "Rhodes", "Strings", "Brass Stab", "Bright Pad", "Vocal Pad"],
+                fx: ["Impact", "Riser", "Reverse Swell", "Sweep", "Downlifter"], vox: ["Oh", "Woah", "Hey"] },
+            { name: "City Pop", fam: "acoustic", key: 61,
+                snares: ["Gated", "Body", "Crack", "Room", "Bright", "Snappy", "Fat", "Rim", "Verb"],
+                percs: ["Shaker", "Tambourine", "Cowbell", "Conga", "Bongo", "Clave", "Triangle", "Cabasa"],
+                bass: [["Slap Bass", "Finger Bass", { drive: 1.5 }], "Synth Bass", "FM Bass", "Finger Bass", "Sub Bass", "Pluck Bass"],
+                melodic: ["Rhodes", ["Funk Guitar", "Guitar Pluck", { chorus: 0.4 }], "Brass Stab", "Bright Pad", "Glass Keys", "Strings", "Saw Lead", "Piano"],
+                fx: ["Sweep", "Riser", "Reverse Swell", "Impact", "Downlifter"], vox: ["Woah", "Oh", "Ah"] },
+            { name: "K-Pop", fam: "machine", key: 63, mods: { kick: { drive: 2.2 } },
+                percs: ["Shaker", "Snap", "Rim", "Tambourine", "Cowbell", "Laser Perc", "Blip", "Clave"],
+                bass: ["808 Punch", "Synth Bass", "Sub Bass", "Reese", "FM Bass", "808 Long"],
+                melodic: ["Supersaw", "Pluck", "Piano", "Bright Pad", "Brass Stab", "Saw Lead", "Bell", "Strings"],
+                fx: ["Riser", "Impact", "Noise Riser", "Downlifter", "Stutter Riser"], vox: ["Hey", "Yeah", "Eee"] },
+            { name: "Vaporwave", fam: "machine", key: 59, post: { lp: 6000, room: 0.35 },
+                percs: ["Shaker", "Cowbell", "Clave", "Conga", "Snap", "Glass Tink", "Triangle", "Vinyl Tick"],
+                bass: ["FM Bass", "Synth Bass", "Finger Bass", "Sub Bass", "Organ Bass", "Pluck Bass"],
+                melodic: [["Mall Keys", "Rhodes", { chorus: 0.6, verb: 0.4 }], "Tape Keys", "Bright Pad", "Glass Keys", "Strings", ["Vapor Sax", "Trumpet", { verb: 0.4 }], "Marimba", "Vocal Pad"],
+                fx: ["Reverse Swell", "Texture", "Sweep", "Downlifter", "Riser"], vox: ["Ooh", "Ah", "Oh"] },
+            { name: "Chiptune", fam: "digital", key: 64, post: { crush: 4 },
+                percs: ["Blip", "Laser Perc", "Zap Perc", "Snap", "Rim", "Metal Hit", "Vinyl Tick", "Clave"],
+                bass: [["Chip Bass", "Chip Lead", { f: hz(36) }], ["Triangle Bass", "Chip Lead", { f: hz(36), osc: "tri" }], "Synth Bass", "Sub Bass", "FM Bass", ["Pulse Bass", "Square Lead", { f: hz(36) }]],
+                melodic: ["Chip Lead", ["Chip Lead 50%", "Chip Lead", { width: 0.5, attack: 0.03, release: 0.2 }], ["Chip Lead 12%", "Chip Lead", { width: 0.125, vib: 0.2, echo: 0.35 }], "Square Lead", "Arp Pluck", ["Chip Bell", "Bell", { crush: 5 }], ["Chip Pad", "Bright Pad", { crush: 6 }], "Saw Lead"],
+                fx: ["Zap", "Stutter Riser", "Riser", "Impact", "Sweep"], vox: ["Hey", "Yeah", "Eee"] },
+            { name: "Gabber", fam: "machine", key: 57, mods: { kick: { drive: 10, body: { decay: 0.45 } } },
+                kicks: ["Gabber", "Distorted", "Blown", "Hard", "Punch", "Crunchy", "Long", "Boom", "Clicky", "Thump"],
+                percs: ["Metal Hit", "Rim", "Clave", "Zap Perc", "Laser Perc", "Shaker", "Cowbell", "Snap"],
+                bass: ["Hoover", "Reese", "Acid", "808 Distorted", "Synth Bass", "Sub Bass"],
+                melodic: ["Hoover Lead", "Supersaw", "Saw Lead", "Chord Stab", "Strings", "Choir", "Bright Pad", "Square Lead"],
+                fx: ["Riser", "Impact", "Noise Riser", "Stutter Riser", "Zap"], vox: ["Hey", "Ho", "Yeah"] },
+            { name: "Footwork", fam: "machine", key: 59,
+                percs: ["Rim", "Snap", "Cowbell", "Shaker", "Clave", "Woodblock", "Vinyl Tick", "Knock"],
+                bass: ["808 Long", "808 Punch", "Sub Bass", "808 Slide", "FM Bass", "Synth Bass"],
+                melodic: ["Vocal Pad", "Rhodes", "Piano", "Strings", "Chord Stab", "Bell", "Flute", "Brass Stab"],
+                fx: ["Riser", "Impact", "Zap", "Sub Drop", "Reverse Swell"], vox: ["Hey", "Uh", "Woah"] },
+            { name: "Baile Funk", fam: "machine", key: 58, mods: { kick: { drive: 3 } },
+                percs: ["Cowbell", "Conga", "Agogo", "Tambourine", "Shaker", "Woodblock", "Clave", "Snap"],
+                bass: ["808 Punch", "808 Distorted", "Sub Bass", "808 Long", "Synth Bass", "Donk"],
+                melodic: ["Brass Stab", "Chord Stab", "Organ Stab", "Strings", "Pluck", "Saw Lead", "Steel Pan", "Flute"],
+                fx: ["Impact", "Riser", "Zap", "Sub Drop", "Downlifter"], vox: ["Hey", "Ay", "Ho"] },
+            { name: "Dancehall", fam: "machine", key: 60,
+                percs: ["Rim", "Shaker", "Cowbell", "Bongo", "Conga", "Woodblock", "Clave", "Snap"],
+                bass: ["Sub Bass", "808 Long", "Synth Bass", "FM Bass", "808 Punch", "Pluck Bass"],
+                melodic: ["Steel Pan", "Pluck", "Organ Stab", "Brass Stab", "Marimba", "Chord Stab", "Flute", "Bell"],
+                fx: FX5, vox: ["Hey", "Ay", "Woah"] },
+            { name: "Moombahton", fam: "machine", key: 57,
+                percs: ["Conga", "Bongo", "Timbale", "Shaker", "Cowbell", "Guiro", "Clave", "Rim"],
+                bass: ["Reese", "Synth Bass", "Sub Bass", "Wobble", "808 Punch", "FM Bass"],
+                melodic: ["Pluck", "Brass Stab", "Chord Stab", "Saw Lead", "Flute", "Bright Pad", "Marimba", "Steel Pan"],
+                fx: ["Riser", "Impact", "Noise Riser", "Downlifter", "Sweep"], vox: ["Hey", "Ay", "Woah"] },
+            { name: "Brazilian Phonk", fam: "trap", key: 55, post: { crush: 9 }, mods: { kick: { drive: 6 } },
+                percs: ["Cowbell", "Agogo", "Snap", "Rim", "Shaker", "Metal Hit", "Woodblock", "Tambourine"],
+                bass: ["808 Distorted", ["808 Blown", "808 Distorted", { drive: 14, lp: 2200, hold: 0.05, decay: 1.0 }], "808 Punch", "808 Slide", "Sub Bass", "Reese"],
+                melodic: [["Phonk Bell", "Bell", { drive: 4 }], "Brass Stab", "Choir", "Dark Pad", "Square Lead", "Chord Stab", "Strings", "Saw Lead"],
+                fx: ["Impact", "Riser", "Sub Drop", "Zap", "Downlifter"], vox: ["Hey", "Ay", "Uh"] },
+            { name: "Hard Techno", fam: "machine", key: 55, mods: { kick: { drive: 6, body: { decay: 0.4 } } },
+                kicks: ["Distorted", "Rumble", "Hard", "Blown", "Punch", "Gabber", "Thump", "Boom", "Tight", "Crunchy"],
+                percs: ["Rim", "Metal Hit", "Clave", "Cowbell", "Shaker", "Woodblock", "Zap Perc", "Laser Perc"],
+                bass: ["Acid", "Reese", "Synth Bass", "Sub Bass", "Hoover", "FM Bass"],
+                melodic: ["Chord Stab", "Dark Pad", "Hoover Lead", "Saw Lead", "Supersaw", "Strings", "Bright Pad", "Arp Pluck"],
+                fx: ["Riser", "Impact", "Noise Riser", "Zap", "Texture"], vox: ["Hey", "Ho", "Uh"] },
+            { name: "Trance", fam: "machine", key: 62, post: { room: 0.15 },
+                percs: ["Shaker", "Tambourine", "Rim", "Clave", "Cabasa", "Triangle", "Snap", "Woodblock"],
+                bass: ["Synth Bass", "Sub Bass", "Pluck Bass", "Reese", "FM Bass", "Acid"],
+                melodic: ["Supersaw", "Pluck", "Bright Pad", "Arp Pluck", "Saw Lead", "Strings", "Choir", "Piano"],
+                fx: ["Riser", "Noise Riser", "Downlifter", "Impact", "Sweep"], vox: ["Ah", "Ooh", "Eee"] },
+            { name: "Big Room", fam: "machine", key: 60, mods: { kick: { drive: 4, body: { decay: 0.36 } } },
+                percs: ["Shaker", "Snap", "Rim", "Tambourine", "Clave", "Laser Perc", "Metal Hit", "Cowbell"],
+                bass: ["Reese", "Synth Bass", "Sub Bass", "808 Punch", "Wobble", "FM Bass"],
+                melodic: [["Big Room Lead", "Supersaw", { drive: 2 }], "Saw Lead", "Brass Stab", "Chord Stab", "Pluck", "Bright Pad", "Hoover Lead", "Piano"],
+                fx: ["Riser", "Impact", "Noise Riser", "Stutter Riser", "Downlifter"], vox: ["Hey", "Ho", "Yeah"] },
+            { name: "Cinematic", fam: "soft", key: 57, mods: { kick: { body: { decay: 1.2 } } },
+                kicks: ["Boom", "Rumble", "Deep", "Sub", "Room", "Long", "Thump", "Round", "Hard", "Distorted"],
+                percs: ["Low Tom", "High Tom", "Metal Hit", "Triangle", "Timbale", "Talking Drum", "Udu", "Steel Hit"],
+                bass: ["Sub Bass", "Reese", "Hoover", "Synth Bass", "808 Long", "Organ Bass"],
+                melodic: ["Strings", "Choir", "Brass Stab", "Dark Pad", "Harp", "Piano", "Bright Pad", "Flute"],
+                fx: ["Impact", "Riser", "Downlifter", "Reverse Swell", "Sub Drop"], vox: ["Ah", "Oh", "Ooh"] },
+            { name: "Ambient", fam: "soft", key: 62,
+                percs: ["Glass Tink", "Triangle", "Shaker", "Woodblock", "Steel Hit", "Udu", "Cabasa", "Vinyl Tick"],
+                bass: ["Sub Bass", "Synth Bass", "FM Bass", "Organ Bass", "Reese", "Pluck Bass"],
+                melodic: ["Bright Pad", "Dark Pad", "Vocal Pad", "Glass Keys", "Kalimba", "Harp", "Strings", "Flute"],
+                fx: ["Texture", "Reverse Swell", "Sweep", "Downlifter", "Noise Riser"], vox: ["Ooh", "Ah", "Oh"] },
+            { name: "Witch House", fam: "trap", key: 55, post: { room: 0.4, lp: 7000 },
+                percs: ["Metal Hit", "Snap", "Rim", "Shaker", "Vinyl Tick", "Triangle", "Woodblock", "Knock"],
+                bass: ["808 Long", "808 Distorted", "Sub Bass", "Reese", "808 Slide", "Hoover"],
+                melodic: ["Choir", "Dark Pad", "Vocal Pad", "Strings", ["Haunted Bell", "Bell", { verb: 0.6 }], "Organ Stab", "Hoover Lead", "Glass Keys"],
+                fx: ["Texture", "Reverse Swell", "Downlifter", "Sub Drop", "Impact"], vox: ["Oh", "Ooh", "Ah"] },
+            { name: "Grime", fam: "machine", key: 58,
+                percs: ["Rim", "Snap", "Clave", "Woodblock", "Metal Hit", "Shaker", "Laser Perc", "Zap Perc"],
+                bass: ["Reese", "Wobble", "Synth Bass", "Sub Bass", ["Eski Bass", "Square Lead", { f: hz(36) }], "FM Bass"],
+                melodic: [["Eski Synth", "Square Lead", {}], "Strings", "Chord Stab", "Bell", "Saw Lead", "Brass Stab", "Pluck", "Dark Pad"],
+                fx: ["Zap", "Impact", "Riser", "Sub Drop", "Downlifter"], vox: ["Hey", "Uh", "Ay"] },
+            { name: "Breakbeat", fam: "breaks", key: 60, post: { crush: 12 },
+                percs: ["Shaker", "Tambourine", "Rim", "Conga", "Bongo", "Cowbell", "Snap", "Woodblock"],
+                bass: ["Reese", "Synth Bass", "Sub Bass", "Acid", "Wobble", "FM Bass"],
+                melodic: ["Strings", "Piano", "Organ Stab", "Brass Stab", "Chord Stab", "Rhodes", "Bright Pad", "Flute"],
+                fx: ["Riser", "Impact", "Reverse Swell", "Downlifter", "Noise Riser"], vox: ["Hey", "Yeah", "Ho"] },
+            { name: "Electro", fam: "machine", key: 58,
+                percs: ["Cowbell", "Clave", "Rim", "Laser Perc", "Zap Perc", "Blip", "Shaker", "Metal Hit"],
+                bass: ["Synth Bass", "FM Bass", "808 Punch", "Acid", "Sub Bass", "808 Long"],
+                melodic: ["Saw Lead", "Square Lead", "Chord Stab", "Arp Pluck", "Bright Pad", "Hoover Lead", "Glass Keys", "Chip Lead"],
+                fx: ["Zap", "Riser", "Sweep", "Impact", "Downlifter"], vox: ["Hey", "Uh", "Yeah"] },
+            { name: "Memphis Rap", fam: "trap", key: 55, post: { dust: 0.035, crush: 10, lp: 7500 },
+                kicks: ["Dusty", "Boom", "Punch", "Knock", "Long", "Vinyl", "Sub", "Hard", "Round", "Tight"],
+                percs: ["Cowbell", "Rim", "Snap", "Shaker", "Vinyl Tick", "Knock", "Clave", "Woodblock"],
+                bass: ["808 Long", "808 Punch", "808 Distorted", "Sub Bass", "808 Slide", "FM Bass"],
+                melodic: [["Tape Piano", "Piano", { crush: 9 }], "Dark Pad", "Choir", "Bell", "Organ Stab", "Strings", "Flute", "Tape Keys"],
+                fx: ["Impact", "Reverse Swell", "Downlifter", "Sub Drop", "Texture"], vox: ["Uh", "Ay", "Ho"] },
+        ];
+        // ---------------------------------------------- build
+        const kits = [];
+        const added = (path, gen, params, extra) => {
+            flAdd(path, gen, params, extra);
+            return flCatalog[flCatalog.length - 1].key;
+        };
+        const recipe = (entry, fallbackF) => {
+            const [shown, name, mods] = Array.isArray(entry) ? entry : [entry, entry, {}];
+            const fn = BASS[name] || MELODIC[name];
+            if (!fn)
+                throw new Error("Sound Library 3: no recipe " + name);
+            return { shown, made: fn(Object.assign({ f: fallbackF }, mods || {})) };
+        };
+        for (const g of GENRES) {
+            const fam = FAM[g.fam];
+            const base = PK + "/" + g.name;
+            const prefix = g.name.replace(/ & /g, " ").replace(/[^A-Za-z0-9 ]/g, "");
+            const post = g.post || {};
+            const mods = g.mods || {};
+            const designed = (part) => merge(merge(fam[part], post), mods[part] || {});
+            let index = 0;
+            const seed = (kind) => "lib3/" + g.name + "/" + kind + "/" + (index++);
+            const made = { kicks: [], snares: [], claps: [], hats: [], ohats: [], toms: [], percs: [], cymbals: [], bass: [] };
+            (g.kicks || fam.kicks).forEach((ch, i) => made.kicks.push(added(base + "/Kicks/" + prefix + " Kick " + ch + " " + pad2(i + 1), "drum2", jitter(applyCharacter(designed("kick"), KICK[ch] || {}), seed("k"), 0.06))));
+            (g.snares || fam.snares).forEach((ch, i) => made.snares.push(added(base + "/Snares/" + prefix + " Snare " + ch + " " + pad2(i + 1), "drum2", jitter(applyCharacter(designed("snare"), SNARE[ch] || {}), seed("s"), 0.06))));
+            (g.claps || fam.claps).forEach((ch, i) => made.claps.push(added(base + "/Claps/" + prefix + " Clap " + ch + " " + pad2(i + 1), "clap2", jitter(applyCharacter(Object.assign({ spacing: 0.011, tail: 0.13, len: 0.6 }, designed("clap")), CLAP[ch] || {}), seed("c"), 0.05))));
+            (g.hats || fam.hats).forEach((ch, i) => made.hats.push(added(base + "/Hats/" + prefix + " Hat " + ch + " " + pad2(i + 1), "hat2", jitter(applyCharacter(designed("hat"), HAT[ch] || {}), seed("h"), 0.05))));
+            (g.ohats || fam.ohats).forEach((ch, i) => made.ohats.push(added(base + "/Open Hats/" + prefix + " Open Hat " + ch + " " + pad2(i + 1), "hat2", jitter(applyCharacter(designed("ohat"), OHAT[ch] || {}), seed("o"), 0.05))));
+            ["Low", "Mid", "High"].forEach((name, i) => {
+                const t = designed("tom");
+                const k = [0.72, 1, 1.38][i];
+                t.body.start *= k;
+                t.body.end *= k;
+                made.toms.push(added(base + "/Toms/" + prefix + " Tom " + name, "drum2", jitter(t, seed("t"), 0.03)));
+            });
+            g.percs.forEach((name, i) => {
+                const [gen, params] = PERC[name](1 + (i % 3 - 1) * 0.06);
+                // very short clicks keep their own sound (crushing would erase them)
+                const short = (params.len || 1) < 0.1;
+                const p = (gen == "drum2" || gen == "hat2") && !short ? merge(params, { crush: post.crush, dust: post.dust, lp: post.lp }) : params;
+                for (const key of ["crush", "dust", "lp"])
+                    if (p[key] == undefined)
+                        delete p[key];
+                made.percs.push(added(base + "/Percussion/" + prefix + " " + name + " " + pad2(i + 1), gen, jitter(p, seed("p"), 0.03)));
+            });
+            const cymbalPost = {};
+            for (const key of ["crush", "lp", "room"])
+                if (post[key] != undefined || fam[key] != undefined)
+                    cymbalPost[key] = post[key];
+            const longer = g.fam == "acoustic" || g.fam == "soft" ? 1.3 : 1;
+            made.cymbals.push(added(base + "/Cymbals/" + prefix + " Crash", "hat2", Object.assign({ f: 180 + (g.key - 55) * 6, ratios: [1, 1.48, 1.8, 2.54, 2.63, 3.9], decay: 1.2 * longer, fastDecay: 0.04, bp: 6500, q: 0.5, hp: 3800, noise: 0.6, len: 2.6 * longer, sizzle: 0.2, ringMod: true, crush: g.fam == "digital" ? 7 : undefined }, cymbalPost)));
+            made.cymbals.push(added(base + "/Cymbals/" + prefix + " Ride", "tones", { partials: [[3000 + (g.key - 50) * 40, 0.6, 1.3 * longer], [4850 + (g.key - 50) * 60, 0.5, 0.9 * longer], [7100, 0.35, 0.6], [9500, 0.25, 0.4]], click: 0.2, len: 2.0 * longer }));
+            made.cymbals.push(added(base + "/Cymbals/" + prefix + " " + (g.fam == "acoustic" ? "China" : "Splash"), "hat2", Object.assign({ f: 420 + (g.key - 55) * 8, ratios: [1, 1.59, 2.14, 2.3, 2.65, 2.92], decay: g.fam == "acoustic" ? 0.9 : 0.55, bp: 5000, q: 0.6, hp: 2500, noise: 0.5, len: 1.4, ringMod: true, sizzle: 0.3, crush: g.fam == "digital" ? 7 : undefined }, cymbalPost)));
+            for (const c of made.cymbals) {
+                const item = flCatalog.find(x => x.key == c);
+                if (item && item.params)
+                    for (const key of Object.keys(item.params))
+                        if (item.params[key] === undefined)
+                            delete item.params[key];
+            }
+            g.bass.forEach((entry, i) => {
+                const { shown, made: [gen, params, extra] } = recipe(entry, hz(36));
+                made.bass.push(added(base + "/Bass/" + prefix + " " + shown + " " + pad2(i + 1), gen, jitter(params, seed("b"), 0.04), Object.assign({ rootKey: 36 }, extra || {})));
+            });
+            g.melodic.forEach((entry, i) => {
+                const { shown, made: [gen, params, extra] } = recipe(entry, hz(60));
+                added(base + "/Melodic/" + prefix + " " + shown + " " + pad2(i + 1), gen, jitter(params, seed("m"), 0.03), Object.assign({ rootKey: 60 }, extra || {}));
+            });
+            g.fx.forEach((name, i) => {
+                const [gen, params] = FXR[name]({});
+                added(base + "/FX/" + prefix + " " + name + " " + pad2(i + 1), gen, jitter(params, seed("f"), 0.08));
+            });
+            g.vox.forEach((name, i) => {
+                const [gen, params] = VOX[name]({ f: hz(g.key + 7) });
+                added(base + "/Vocal Chops/" + prefix + " Vox " + name + " " + pad2(i + 1), gen, params, { rootKey: g.key + 7 });
+            });
+            // Two kits in the FPC pad order (kick, snare, clap, hat, open hat, then toms, percs and a cymbal).
+            const low = made.bass.find(k => /808/.test(k)) || made.kicks[1];
+            kits.push({ name: g.name + " Kit", genre: g.name, pads: [[made.kicks[0], 0], [made.snares[0], 0], [made.claps[0], 0], [made.hats[0], 1], [made.ohats[0], 1], [made.toms[0], 0], [made.toms[2], 0], [made.percs[0], 0], [made.percs[1], 0], [made.percs[2], 0], [made.cymbals[0], 0], [low, 0]] });
+            kits.push({ name: g.name + " Kit 2", genre: g.name, pads: [[made.kicks[3], 0], [made.snares[4], 0], [made.claps[2], 0], [made.hats[3], 1], [made.ohats[2], 1], [made.toms[1], 0], [made.percs[3], 0], [made.percs[4], 0], [made.percs[5], 0], [made.hats[5], 1], [made.cymbals[1], 0], [made.kicks[6], 0]] });
+        }
+        // Kits for the Sound Library 2 genres that had none.
+        const existing = new Set(FLSoundFactory.getKits().map(k => k.name));
+        const folders = new Map();
+        for (const item of flCatalog) {
+            const m = /^Packs\/([^/]+)\/(Kicks|Snares|Claps|Hats|Open Hats|Percussion|Cymbals|Bass)\//.exec(item.path);
+            if (!m)
+                continue;
+            if (!folders.has(m[1]))
+                folders.set(m[1], {});
+            const f = folders.get(m[1]);
+            (f[m[2]] = f[m[2]] || []).push(item.key);
+        }
+        const lib3 = new Set(GENRES.map(g => g.name));
+        for (const [genre, f] of folders) {
+            if (lib3.has(genre) || !f.Kicks || !f.Snares || !f.Hats)
+                continue;
+            const name = genre + " Kit";
+            if (existing.has(name))
+                continue;
+            const perc = f.Percussion || [];
+            const claps = f.Claps || f.Snares;
+            const open = f["Open Hats"] || f.Hats;
+            const low = (f.Bass || []).find(k => /808/.test(k)) || f.Kicks[1] || f.Kicks[0];
+            kits.push({ name, genre, pads: [[f.Kicks[0], 0], [f.Snares[0], 0], [claps[0], 0], [f.Hats[0], 1], [open[0], 1], [perc[0] || f.Kicks[2], 0], [perc[1] || f.Snares[1], 0], [perc[2] || f.Hats[1], 0], [perc[3] || f.Kicks[3], 0], [perc[4] || f.Snares[2], 0], [(f.Cymbals || f.Hats)[0], 0], [low, 0]] });
+        }
+        for (const kit of kits)
+            if (!existing.has(kit.name)) {
+                FLSoundFactory.getKits().push({ name: kit.name, pads: kit.pads, genre: kit.genre });
+                existing.add(kit.name);
+            }
+        // FPC presets for the new kits, in two menu groups of at most 64.
+        const names = kits.map(k => k.name).sort((a, b) => a.localeCompare(b));
+        const half = Math.ceil(names.length / 2);
+        const groups = [["Genre Drum Kits " + names[0][0] + "-" + names[half - 1][0], names.slice(0, half)], ["Genre Drum Kits " + names[half][0] + "-" + names[names.length - 1][0], names.slice(half)]];
+        for (const [title, list] of groups) {
+            const category = { name: title, presets: toNameMap(list.slice(0, 64).map(kit => ({ name: "FPC: " + kit, isNoise: true, settings: { "type": "FPC", "eqFilter": [], "effects": [], "transition": "normal", "fadeInSeconds": 0, "fadeOutTicks": 6, "chord": "simultaneous", "envelopes": [], "fl": { "fpc": { "kit": kit } } } }))) };
+            category.index = EditorConfig.presetCategories.length;
+            EditorConfig.presetCategories.push(category);
+            EditorConfig.presetCategories.dictionary[category.name] = category;
+        }
+        FLPackKit.lib3 = { genres: GENRES.map(g => g.name), kits: names };
+    }
+
+// ---- end fl_soundpacks3.js ----
 // ---- begin fl_loops.js ----
     // ======================================================================
     // CarrotBox: the Live Loops library.
@@ -37929,7 +38414,7 @@ You should be redirected to the song at:<br /><br />
                 items.push(Object.assign({ group: "Built in", color: "#666", key: b.name }, b));
             const tools = [
                 { icon: "Gn", name: "Melody / Rhythm Generator", sub: "Leads, hooks, harmonies, bass, chords, drums or a full beat in 21 styles", badge: "Tool", run: () => carrotOpen(this._editor, "flLeadGen") },
-                { icon: "Kt", name: "Drum Kit / Sound Kit Loader", sub: "Load FL Studio kits, folders and zips", badge: "Tool", run: () => carrotOpen(this._editor, "flKits") },
+                { icon: "Kt", name: "Drum Kit Generator / Loader", sub: "Generate 12-pad kits from 115 genre kits and 5,700 sounds, or load your own", badge: "Tool", run: () => carrotOpen(this._editor, "flKits") },
                 { icon: "Rc", name: "Audio Recorder", sub: "Record vocals or instruments with mixing effects", badge: "Tool", run: () => carrotOpen(this._editor, "flRecorder") },
                 { icon: "Br", name: "Sound Browser", sub: "Samples, kits and packs (F8)", badge: "Tool", run: () => this._editor.flShowBrowser(true) },
                 { icon: "SP", name: "SP-404MKII / MIDI Devices", sub: "USB pads, tempo sync, sequencing, audio and samples", badge: "Tool", run: () => carrotOpen(this._editor, "flHardware") },
@@ -38449,6 +38934,12 @@ You should be redirected to the song at:<br /><br />
 .carrot-rec-button.cb-recording { background: #e0344d !important; color: white !important; animation: carrot-pulse 1s infinite; }
 @keyframes carrot-pulse { 50% { opacity: 0.65; } }
 .carrot-seed { display: flex; flex-direction: column; gap: 2px; align-items: stretch; }
+.carrot-kitgen-pads { display: grid; grid-template-columns: 1fr; gap: 3px; max-height: 340px; overflow: auto; }
+.carrot-kitgen-row { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 6px; background: rgba(127,127,127,0.08); }
+.carrot-kitgen-label { flex: 0 0 104px; font-size: 11px; opacity: 0.75; }
+.carrot-kitgen-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.carrot-kitgen-name small { opacity: 0.55; margin-left: 4px; }
+.carrot-kitgen-row .cb-button, .carrot-kitgen-row .cb-toggle { padding: 2px 8px; font-size: 11px; }
 .carrot-gen .cb-section { margin-top: 8px; }
 .carrot-gen .cb-row { gap: 8px 12px; align-items: flex-end; }
 .carrot-gen-top { margin-bottom: 4px; }
@@ -38650,7 +39141,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
                         [k("F6"), "Channel rack"], [k("F7"), "Piano roll"], [k("F9"), "Mixer (instead of master effects)"], [k("F10"), "Settings"], [k("F1"), "This list"], [k("L"), "Pattern / song mode"],
                     ]],
                 ["Tools", [
-                        [k("K"), "Drum kit / sound kit loader"], [k("G"), "Melody / rhythm generator"], [k(","), "CarrotBox settings"], [k("?"), "This list"], [k("Ctrl", "S"), "Export song"], [k("Ctrl", "O"), "Import song"],
+                        [k("K"), "Drum kit generator / loader"], [k("G"), "Melody / rhythm generator"], [k(","), "CarrotBox settings"], [k("?"), "This list"], [k("Ctrl", "S"), "Export song"], [k("Ctrl", "O"), "Import song"],
                     ]],
             ];
             const body = HTML.div();
@@ -38717,14 +39208,170 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
         }
         return { picks, byCategory };
     }
+    // ---------------------------------------------------------- kit generator
+    // Builds 12-pad drum kits from the whole built-in library: by genre and
+    // character, with pads you can lock, audition and reshuffle one by one.
+    const CARROT_KITGEN_PADS = [
+        ["kick", "Kick"], ["snare", "Snare"], ["clap", "Clap"], ["hat", "Closed hat"], ["open", "Open hat"], ["tom", "Low tom"],
+        ["tom", "High tom"], ["perc", "Perc 1"], ["perc", "Perc 2"], ["perc", "Perc 3"], ["cymbal", "Cymbal"], ["low", "808 / kick 2"],
+    ];
+    const CARROT_KITGEN_CHARACTERS = [
+        ["Any character", null], ["Punchy", /punch|hard|knock|snap|crack|clicky|thump/i], ["Dark / deep", /dark|deep|sub|round|boom|rumble|low/i],
+        ["Dusty / lo-fi", /dusty|vinyl|lo-?fi|crunch|tape|memphis/i], ["Clean", null], ["Distorted / hard", /distort|blown|hard|trash|gabber|crunchy|rage/i],
+        ["Glitchy / digital", /glitch|bit|digital|chip|laser|zap|blip/i], ["Roomy / big", /room|verb|gated|big|wide|long|washy|boom/i], ["Tight / short", /tight|short|crisp|snap|piccolo/i],
+    ];
+    class CarrotKitGenerator {
+        // Every drum sound in the library with its role and genre (built once).
+        static pool() {
+            if (CarrotKitGenerator._pool)
+                return CarrotKitGenerator._pool;
+            const pool = [];
+            const role = (path, name) => {
+                if (/\/Open Hats\//.test(path) || /open[ -]?hat|\bohh?\b/i.test(name))
+                    return "open";
+                if (/\/Kicks\//.test(path) || /kick|\bbd\b/i.test(name))
+                    return "kick";
+                if (/\/Snares\//.test(path) || /snare/i.test(name))
+                    return "snare";
+                if (/\/Claps\//.test(path) || /clap/i.test(name))
+                    return "clap";
+                if (/\/Hats\//.test(path) || /hat\b|hi-?hat/i.test(name))
+                    return "hat";
+                if (/\/Toms\//.test(path) || /\btom\b/i.test(name))
+                    return "tom";
+                if (/\/Cymbals\//.test(path) || /crash|ride|splash|china|cymbal/i.test(name))
+                    return "cymbal";
+                if (/808/.test(name) && /Bass|808s/.test(path))
+                    return "low";
+                if (/\/Percussion\//.test(path) || /^Drums\/Percussion|World Percussion/.test(path))
+                    return "perc";
+                return null;
+            };
+            for (const item of FLSoundFactory.getCatalog()) {
+                if (/^(Loops|Instruments|FX)\//.test(item.path) || /\/(Melodic|FX|Vocal Chops|Loops?)\//.test(item.path) || /Synth One-Shots|Chord Stabs|FX Toolkit|Vocal Chops|Foley/.test(item.path))
+                    continue;
+                if (/808s In Every Key/.test(item.path))
+                    continue;
+                const r = role(item.path, item.name);
+                if (!r)
+                    continue;
+                const parts = item.path.split("/");
+                const genre = parts[0] == "Packs" || parts[0] == "Genre Kits" || parts[0] == "Drum Machines" ? parts[1] : parts[0] == "Drums" ? "Classic drums" : parts[0];
+                pool.push({ key: item.key, name: item.name, role: r, genre, path: item.path });
+            }
+            CarrotKitGenerator._pool = pool;
+            return pool;
+        }
+        static genres() {
+            const counts = new Map();
+            for (const s of CarrotKitGenerator.pool())
+                counts.set(s.genre, (counts.get(s.genre) || 0) + 1);
+            return Array.from(counts.keys()).filter(g => counts.get(g) >= 12).sort((a, b) => a.localeCompare(b));
+        }
+        // Picks a sound for a pad. avoid: keys already in the kit.
+        static pick(role, genre, character, avoid, rand = Math.random) {
+            const pool = CarrotKitGenerator.pool();
+            const re = CARROT_KITGEN_CHARACTERS[character] ? CARROT_KITGEN_CHARACTERS[character][1] : null;
+            const clean = CARROT_KITGEN_CHARACTERS[character] && CARROT_KITGEN_CHARACTERS[character][0] == "Clean";
+            const lookup = role == "low" ? ["low", "kick"] : [role];
+            for (const r of lookup) {
+                let list = pool.filter(s => s.role == r && !avoid.has(s.key));
+                const inGenre = genre ? list.filter(s => s.genre == genre) : list;
+                if (inGenre.length > 0)
+                    list = inGenre;
+                if (re) {
+                    const matching = list.filter(s => re.test(s.name));
+                    if (matching.length > 0)
+                        list = matching;
+                }
+                else if (clean) {
+                    const plain = list.filter(s => !/dusty|vinyl|crunch|distort|blown|trash|glitch|bit|verb|room/i.test(s.name));
+                    if (plain.length > 0)
+                        list = plain;
+                }
+                if (list.length > 0)
+                    return list[Math.floor(rand() * list.length)];
+            }
+            return null;
+        }
+        static generate(genre, character, current = [], locks = []) {
+            const pads = [];
+            const avoid = new Set();
+            CARROT_KITGEN_PADS.forEach(([role], i) => {
+                if (locks[i] && current[i]) {
+                    pads.push(current[i]);
+                    avoid.add(current[i].key);
+                }
+                else
+                    pads.push(null);
+            });
+            CARROT_KITGEN_PADS.forEach(([role], i) => {
+                if (pads[i])
+                    return;
+                const s = CarrotKitGenerator.pick(role, genre, character, avoid);
+                pads[i] = s;
+                if (s)
+                    avoid.add(s.key);
+            });
+            // Toms: the lower-sounding name on the low pad.
+            if (pads[5] && pads[6] && !locks[5] && !locks[6] && /high|hi\b/i.test(pads[5].name) && !/high|hi\b/i.test(pads[6].name))
+                [pads[5], pads[6]] = [pads[6], pads[5]];
+            return pads;
+        }
+        static saved() {
+            try {
+                const list = JSON.parse(window.localStorage.getItem("carrotGeneratedKits") || "[]");
+                return Array.isArray(list) ? list : [];
+            }
+            catch (error) {
+                return [];
+            }
+        }
+        static save(list) {
+            try {
+                window.localStorage.setItem("carrotGeneratedKits", JSON.stringify(list.slice(0, 60)));
+            }
+            catch (error) {
+                flToast("Couldn't save the kit (browser storage is full or blocked).");
+            }
+        }
+        // Puts a kit (array of {key, name} or null) on the FPC pads of the current instrument.
+        static loadOntoFPC(doc, pads, kitName) {
+            const instrument = flCurrentInstrument(doc);
+            doc.record(new ChangeFL(doc, () => {
+                if (instrument.type != FLConfig.typeFPC) {
+                    instrument.type = FLConfig.typeFPC;
+                    instrument.chord = Config.chords.dictionary["simultaneous"].index;
+                    instrument.effects &= ~(1 << 11);
+                    instrument.clearInvalidEnvelopeTargets();
+                }
+                const fpc = instrument.fl.fpc;
+                fpc.pads.forEach((pad, i) => {
+                    pad.reset();
+                    const s = pads[i];
+                    if (!s)
+                        return;
+                    pad.sampleId = "b:" + s.key;
+                    pad.name = s.name;
+                    pad.cut = i == 3 || i == 4 ? 1 : 0;
+                });
+                fpc.kitName = kitName;
+            }));
+            for (const pad of instrument.fl.fpc.pads)
+                if (pad.sampleId)
+                    FLSampleBank.request(pad.sampleId);
+        }
+    }
     class CarrotKitLoader extends CarrotFloatingWindow {
-        static open(editor, tab = 0) {
+        // tab: "generate", "load", "mine", "builtin", "packs" (or an index)
+        static open(editor, tab = "generate") {
             const win = CarrotWindows.openPanel("kits", () => new CarrotKitLoader(editor));
-            win._tabs.show(tab);
+            const names = ["generate", "load", "mine", "builtin", "packs"];
+            win._tabs.show(typeof tab == "number" ? tab : Math.max(0, names.indexOf(tab)));
             return win;
         }
         constructor(editor) {
-            super(editor, { key: "kits", title: "Drum Kit / Sound Kit Loader", color: "#ff9b21", width: 560 });
+            super(editor, { key: "kits", title: "Drum Kits: Generator and Loader", color: "#ff9b21", width: 620 });
             this._doc = editor.doc;
             this._status = HTML.div({ class: "cb-hint", style: "min-height: 16px; margin-top: 6px;" });
             // ---- Load tab
@@ -38763,11 +39410,19 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
             const myTab = HTML.div(CarrotUI.hint("Kits you've imported live in this browser. Auto-map picks a kick, snare, clap, hats, percs, toms, an 808 and a cymbal for the 12 FPC pads."), HTML.div({ style: "height: 6px;" }), this._myKits);
             // ---- Built-in kits tab
             const builtIn = HTML.div({ class: "carrot-list" });
+            const builtSearch = HTML.input({ type: "search", placeholder: "Search " + FLSoundFactory.getKits().length + " kits (rock, drill, 808...)", style: "width: 100%; box-sizing: border-box; margin-bottom: 6px;" });
+            for (const type of ["keydown", "keyup", "keypress"])
+                builtSearch.addEventListener(type, (event) => event.stopPropagation());
+            builtSearch.addEventListener("input", () => {
+                const q = builtSearch.value.trim().toLowerCase();
+                for (const row of builtIn.children)
+                    row.style.display = !q || row.textContent.toLowerCase().includes(q) ? "" : "none";
+            });
             for (const kit of FLSoundFactory.getKits()) {
                 const names = kit.pads.slice(0, 5).map(p => (FLSoundFactory.getInfo(p[0]) || { name: p[0] }).name).join(", ");
                 builtIn.appendChild(HTML.div({ class: "carrot-list-row" }, HTML.span({ class: "carrot-grow", title: names }, HTML.b(kit.name), HTML.span({ class: "cb-hint" }, "  " + names + "…")), CarrotUI.button("Load into FPC", () => this._loadBuiltin(kit.name), { primary: true })));
             }
-            const builtTab = HTML.div(CarrotUI.hint("Built-in kits load onto FPC pads on the current drum channel (one is created if needed)."), HTML.div({ style: "height: 6px;" }), builtIn);
+            const builtTab = HTML.div(CarrotUI.hint("Built-in kits load onto FPC pads on the current drum channel (one is created if needed)."), HTML.div({ style: "height: 6px;" }), builtSearch, builtIn);
             // ---- FL Studio packs tab
             const packsInput = HTML.input({ type: "file", style: "display: none;" });
             packsInput.setAttribute("webkitdirectory", "");
@@ -38777,13 +39432,13 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
                 packsInput.value = "";
             });
             const packsTab = HTML.div(HTML.p({ class: "cb-hint", style: "margin: 0 0 6px;" }, "If FL Studio is installed on this computer you can bring its whole sample library (the Packs folder) into CarrotBox. Choose the folder below; the sounds are copied into this browser, so it can take a minute for big libraries."), HTML.div({ class: "carrot-list" }, HTML.div({ class: "carrot-list-row" }, HTML.b("Windows"), HTML.span({ class: "carrot-grow", style: "user-select: text;" }, "C:\\Program Files\\Image-Line\\FL Studio 21\\Data\\Patches\\Packs")), HTML.div({ class: "carrot-list-row" }, HTML.b("macOS"), HTML.span({ class: "carrot-grow", style: "user-select: text;" }, "Applications ▸ FL Studio 21 ▸ (right-click) Show Package Contents ▸ Contents/Resources/FL/Data/Patches/Packs")), HTML.div({ class: "carrot-list-row" }, HTML.b("User data"), HTML.span({ class: "carrot-grow", style: "user-select: text;" }, "Documents/Image-Line/FL Studio/Data/Patches/Packs (packs you downloaded)"))), HTML.div({ style: "display: flex; justify-content: center; margin-top: 10px;" }, CarrotUI.button("Choose Packs folder…", () => packsInput.click(), { primary: true })), packsInput, CarrotUI.hint("Tip: on macOS, press ⌘⇧G in the folder picker and paste the path. Your version number may differ (20, 21, 2024…)."));
-            this._tabs = CarrotUI.tabs([["Load a kit", loadTab], ["My kits", myTab], ["Built-in kits", builtTab], ["FL Studio Packs", packsTab]], (index) => {
-                if (index == 1)
+            this._tabs = CarrotUI.tabs([["Kit generator", this._buildGenerator()], ["Load a kit", loadTab], ["My kits", myTab], ["Built-in kits", builtTab], ["FL Studio Packs", packsTab]], (index) => {
+                if (index == 2)
                     this._renderMyKits();
             });
             this.setBody(HTML.div(this._tabs, this._status));
             this._kitListener = () => {
-                if (this._tabs.current == 1)
+                if (this._tabs.current == 2)
                     this._renderMyKits();
             };
             FLSampleBank.onChange(this._kitListener);
@@ -38881,6 +39536,129 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
                 doc.song.channels[doc.channel].name = "808";
             }));
         }
+        _buildGenerator() {
+            let saved = {};
+            try {
+                saved = JSON.parse(window.localStorage.getItem("carrotKitGen") || "{}") || {};
+            }
+            catch (error) { }
+            const genres = CarrotKitGenerator.genres();
+            this._gen = { genre: Math.max(0, genres.indexOf(saved.genre) + 1), character: saved.character | 0, pads: [], locks: new Array(12).fill(false), mix: !!saved.mix };
+            const g = this._gen;
+            const remember = () => {
+                try {
+                    window.localStorage.setItem("carrotKitGen", JSON.stringify({ genre: genres[g.genre - 1] || null, character: g.character, mix: g.mix }));
+                }
+                catch (error) { }
+            };
+            const genreSelect = CarrotUI.select({ label: "Genre", options: ["Any genre"].concat(genres), value: g.genre, onChange: (v) => { g.genre = v; remember(); } });
+            const characterSelect = CarrotUI.select({ label: "Character", options: CARROT_KITGEN_CHARACTERS.map(c => c[0]), value: g.character, onChange: (v) => { g.character = v; remember(); } });
+            const mixToggle = CarrotUI.toggle({ label: "Mix genres", value: g.mix, title: "Take a few pads from other genres", onChange: (v) => { g.mix = v; remember(); } });
+            const rows = HTML.div({ class: "carrot-kitgen-pads" });
+            const nameInput = HTML.input({ type: "text", value: "", placeholder: "Kit name", style: "flex: 1 1 160px; min-width: 120px;" });
+            for (const type of ["keydown", "keyup", "keypress"])
+                nameInput.addEventListener(type, (event) => event.stopPropagation());
+            const genreForPad = () => {
+                const genre = genres[g.genre - 1] || null;
+                return g.mix && genre && Math.random() < 0.25 ? null : genre;
+            };
+            const render = () => {
+                rows.innerHTML = "";
+                CARROT_KITGEN_PADS.forEach(([role, label], i) => {
+                    const s = g.pads[i];
+                    const lock = CarrotUI.toggle({ label: "Lock", value: g.locks[i], title: "Keep this pad when generating", onChange: (v) => { g.locks[i] = v; } });
+                    const play = CarrotUI.button("Play", () => { if (s) FLSampleBank.preview("b:" + s.key); }, { title: "Hear this pad" });
+                    const shuffle = CarrotUI.button("Shuffle", () => {
+                        const avoid = new Set(g.pads.filter(x => x).map(x => x.key));
+                        const next = CarrotKitGenerator.pick(role, genreForPad(), g.character, avoid);
+                        if (next) {
+                            g.pads[i] = next;
+                            render();
+                            FLSampleBank.preview("b:" + next.key);
+                        }
+                    }, { title: "Another sound for this pad" });
+                    rows.appendChild(HTML.div({ class: "carrot-kitgen-row" }, HTML.span({ class: "carrot-kitgen-label" }, String(i + 1) + "  " + label), HTML.span({ class: "carrot-kitgen-name", title: s ? s.path : "" }, s ? s.name : "(nothing found)", s ? HTML.small(s.genre) : ""), play, shuffle, lock));
+                });
+            };
+            const generate = () => {
+                const genre = genres[g.genre - 1] || null;
+                const pads = CarrotKitGenerator.generate(genre, g.character, g.pads, g.locks);
+                if (g.mix && genre) {
+                    const avoid = new Set(pads.filter(x => x).map(x => x.key));
+                    for (let i = 0; i < pads.length; i++)
+                        if (!g.locks[i] && Math.random() < 0.25) {
+                            const other = CarrotKitGenerator.pick(CARROT_KITGEN_PADS[i][0], null, g.character, avoid);
+                            if (other) {
+                                pads[i] = other;
+                                avoid.add(other.key);
+                            }
+                        }
+                }
+                g.pads = pads;
+                const character = g.character > 0 ? CARROT_KITGEN_CHARACTERS[g.character][0].split(" /")[0] + " " : "";
+                nameInput.value = (character + (genre || "Mixed") + " Kit " + (1 + Math.floor(Math.random() * 99))).replace(/\s+/g, " ");
+                render();
+            };
+            const playAll = () => {
+                g.pads.forEach((s, i) => { if (s) setTimeout(() => FLSampleBank.preview("b:" + s.key), i * 260); });
+            };
+            const load = () => {
+                if (!g.pads.some(x => x))
+                    return;
+                if (!this._ensureDrumChannel())
+                    return;
+                CarrotKitGenerator.loadOntoFPC(this._doc, g.pads, nameInput.value || "Generated kit");
+                flToast("Loaded " + (nameInput.value || "the kit") + " onto the FPC pads");
+                carrotUISound("success");
+            };
+            const savedList = HTML.div({ class: "carrot-list" });
+            const fromKeys = (keys) => {
+                const pool = CarrotKitGenerator.pool();
+                return keys.map(key => key ? pool.find(s => s.key == key) || null : null);
+            };
+            const renderSaved = () => {
+                savedList.innerHTML = "";
+                const list = CarrotKitGenerator.saved();
+                if (list.length == 0) {
+                    savedList.appendChild(CarrotUI.hint("Kits you save here stay in this browser."));
+                    return;
+                }
+                list.forEach((kit, k) => {
+                    savedList.appendChild(HTML.div({ class: "carrot-list-row" }, HTML.span({ class: "carrot-grow" }, HTML.b(kit.name), HTML.span({ class: "cb-hint" }, "  " + kit.pads.filter(x => x).length + " pads")), CarrotUI.button("Edit", () => {
+                        g.pads = fromKeys(kit.pads);
+                        nameInput.value = kit.name;
+                        render();
+                    }), CarrotUI.button("Load into FPC", () => {
+                        if (!this._ensureDrumChannel())
+                            return;
+                        CarrotKitGenerator.loadOntoFPC(this._doc, fromKeys(kit.pads), kit.name);
+                        flToast("Loaded " + kit.name);
+                    }, { primary: true }), CarrotUI.button("x", () => {
+                        const next = CarrotKitGenerator.saved();
+                        next.splice(k, 1);
+                        CarrotKitGenerator.save(next);
+                        renderSaved();
+                    }, { title: "Delete this saved kit" })));
+                });
+            };
+            const save = () => {
+                if (!g.pads.some(x => x))
+                    return;
+                const list = CarrotKitGenerator.saved();
+                list.unshift({ name: nameInput.value || "Generated kit", pads: g.pads.map(s => s ? s.key : null) });
+                CarrotKitGenerator.save(list);
+                renderSaved();
+                flToast("Saved " + (nameInput.value || "the kit"));
+            };
+            generate();
+            renderSaved();
+            return HTML.div({ class: "carrot-kitgen" },
+                CarrotUI.hint("Builds a 12-pad kit from " + CarrotKitGenerator.pool().length + " drum sounds in " + genres.length + " genres. Lock the pads you like and generate again; Shuffle changes one pad."),
+                HTML.div({ class: "cb-row", style: "margin: 8px 0; align-items: flex-end;" }, genreSelect, characterSelect, mixToggle, CarrotUI.button("Generate kit", generate, { primary: true })),
+                rows,
+                HTML.div({ class: "cb-row", style: "margin-top: 8px;" }, nameInput, CarrotUI.button("Play all", playAll), CarrotUI.button("Save kit", save), CarrotUI.button("Load into FPC", load, { primary: true })),
+                CarrotUI.section("Saved kits", savedList));
+        }
         _loadBuiltin(name) {
             if (!this._ensureDrumChannel())
                 return;
@@ -38897,7 +39675,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
             }
             for (const kit of FLKitLibrary.kits.slice().reverse()) {
                 this._myKits.appendChild(HTML.div({ class: "carrot-list-row" }, HTML.span({ class: "carrot-grow" }, HTML.b(kit.name), HTML.span({ class: "cb-hint" }, "  " + kit.files.length + " sounds")), CarrotUI.button("→ FPC", () => this._loadKitToFPC(kit), { primary: true, title: "Auto-map onto the FPC pads" }), CarrotUI.button("Details", () => {
-                    this._tabs.show(0);
+                    this._tabs.show(1);
                     this._showResult(kit);
                 }), CarrotUI.button("x", async () => {
                     if (!window.confirm("Remove “" + kit.name + "” from this browser?"))
@@ -38915,7 +39693,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
         dnb: ["Drum & Bass Kit"], breakcore: ["Breakcore Kit", "Drum & Bass Kit"], lofi: ["Lo-Fi Kit"], boombap: ["Boom Bap Kit"], rnb: ["R&B Kit", "Lo-Fi Kit"],
         afro: ["Afro / Amapiano Kit"], reggaeton: ["Reggaeton Kit", "TR-808 Kit"], rock: ["Rock Kit", "Acoustic Kit"], indie: ["Indie Kit", "Acoustic Kit"],
         synthwave: ["Synthwave Kit", "TR-909 Kit"], chiptune: ["Chiptune Kit", "TR-808 Kit"], hyperpop: ["Hyperpop Kit", "Trap Kit"], webcore: ["Webcore Kit", "Hyperpop Kit", "Trap Kit"],
-        funk: ["Funk Kit", "Acoustic Kit"], jazz: ["Jazz Kit", "Acoustic Kit"], ambient: ["Ambient Kit", "Lo-Fi Kit"],
+        funk: ["Disco & Funk Kit", "Funk Kit", "Acoustic Kit"], jazz: ["Jazz Kit", "Acoustic Kit"], ambient: ["Ambient Kit", "Lo-Fi Kit"],
     };
     // [bass, chords, lead]
     const CARROT_GEN_SOUNDS = {
@@ -40023,8 +40801,8 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
             case "flPlugins": return CarrotPluginManager.open(editor);
             case "flSettings": return CarrotSettingsPanel.open(editor);
             case "flShortcuts": return CarrotShortcutsPanel.open(editor);
-            case "flKits": return CarrotKitLoader.open(editor, 0);
-            case "flKits:packs": return CarrotKitLoader.open(editor, 3);
+            case "flKits": return CarrotKitLoader.open(editor, "generate");
+            case "flKits:packs": return CarrotKitLoader.open(editor, "packs");
             case "flLeadGen": return CarrotGeneratorPanel.open(editor);
             case "flRecorder": return CarrotRecorder.open(editor);
             case "flHardware": return CarrotHardwarePanel.open(editor);
@@ -40078,7 +40856,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
             return false;
         switch (key) {
             case "k":
-                CarrotKitLoader.open(editor, 0);
+                CarrotKitLoader.open(editor, "generate");
                 break;
             case "g":
                 CarrotGeneratorPanel.open(editor);
@@ -40137,7 +40915,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
         editor._carrotGenButton = flIconButton("--carrot-spark-symbol", "Melody / rhythm generator (G)");
         editor._carrotBar = HTML.div({ class: "fl-bar carrot-bar-2" }, editor._carrotKitButton, editor._carrotPluginButton, editor._carrotRecordButton, editor._carrotGenButton);
         editor._flBar.parentElement.insertBefore(editor._carrotBar, editor._flBar.nextSibling);
-        editor._carrotKitButton.addEventListener("click", () => CarrotKitLoader.open(editor, 0));
+        editor._carrotKitButton.addEventListener("click", () => CarrotKitLoader.open(editor, "generate"));
         editor._carrotPluginButton.addEventListener("click", (event) => {
             if (event.shiftKey || CarrotPlugins.installedIds().length == 0)
                 CarrotPluginManager.open(editor);
@@ -40648,7 +41426,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
                 input.remove();
                 if (files.length == 0)
                     return;
-                const loader = CarrotKitLoader.open(editor, 0);
+                const loader = CarrotKitLoader.open(editor, "load");
                 loader._import(files);
             });
             document.body.appendChild(input);
@@ -41325,7 +42103,7 @@ html.carrot-fl .cfl-top {
                     items.push(["Bouncify", () => carrotOpenTool(editor, "bouncify")]);
                     items.push(["Sketchpad", () => carrotOpenTool(editor, "sketchpad")]);
                     items.push(["Melody / rhythm generator", () => carrotOpen(editor, "flLeadGen"), "G"]);
-                    items.push(["Drum kit / sound kit loader", () => carrotOpen(editor, "flKits"), "K"]);
+                    items.push(["Drum kit generator / loader", () => carrotOpen(editor, "flKits"), "K"]);
                     items.push(["Audio recorder", () => carrotOpen(editor, "flRecorder")]);
                     items.push(["SP-404MKII / MIDI devices", () => CarrotHardwarePanel.open(editor)]);
                     items.push(["Plugin manager", () => CarrotPluginManager.open(editor)]);
@@ -42078,7 +42856,7 @@ html.carrot-fl .cfl-top {
             this._prevBarButton = button({ class: "prevBarButton", type: "button", title: "Previous Bar (left bracket)" });
             this._nextBarButton = button({ class: "nextBarButton", type: "button", title: "Next Bar (right bracket)" });
             this._volumeSlider = new Slider(input({ title: "main volume", style: "flex-grow: 1; margin: 0;", type: "range", min: "0", max: "75", value: "50", step: "1" }), this.doc, (oldValue, newValue) => { this._setVolumeSlider(); return null; });
-            this._fileMenu = select({ style: "width: 100%;" }, option({ selected: true, disabled: true, hidden: hideSelectMenuTitlesInOptions }, "File"), option({ value: "new" }, "New Blank Song"), option({ value: "import" }, "Import Song... (" + ctrlSymbol + "O)"), option({ value: "export" }, "Export Song... (" + ctrlSymbol + "S)"), option({ value: "saveProject" }, "Save Project + Samples (.json)"), option({ value: "kitLoader" }, "Drum Kit / Sound Kit Loader... (K)"), option({ value: "flPacks" }, "Import FL Studio Packs Folder..."), option({ value: "recorder" }, "Audio Recorder..."), option({ value: "hardware" }, "SP-404MKII / MIDI Devices..."), option({ value: "copyUrl" }, "Copy Song URL"), option({ value: "shareUrl" }, "Share Song URL"), option({ value: "shortenUrl" }, "Shorten Song URL"), option({ value: "songRecovery" }, "Recover Recent Song..."));
+            this._fileMenu = select({ style: "width: 100%;" }, option({ selected: true, disabled: true, hidden: hideSelectMenuTitlesInOptions }, "File"), option({ value: "new" }, "New Blank Song"), option({ value: "import" }, "Import Song... (" + ctrlSymbol + "O)"), option({ value: "export" }, "Export Song... (" + ctrlSymbol + "S)"), option({ value: "saveProject" }, "Save Project + Samples (.json)"), option({ value: "kitLoader" }, "Drum Kit Generator / Loader... (K)"), option({ value: "flPacks" }, "Import FL Studio Packs Folder..."), option({ value: "recorder" }, "Audio Recorder..."), option({ value: "hardware" }, "SP-404MKII / MIDI Devices..."), option({ value: "copyUrl" }, "Copy Song URL"), option({ value: "shareUrl" }, "Share Song URL"), option({ value: "shortenUrl" }, "Shorten Song URL"), option({ value: "songRecovery" }, "Recover Recent Song..."));
             this._editMenu = select({ style: "width: 100%;" }, option({ selected: true, disabled: true, hidden: hideSelectMenuTitlesInOptions }, "Edit"), option({ value: "undo" }, "Undo (Z)"), option({ value: "redo" }, "Redo (Y)"), option({ value: "copy" }, "Copy Pattern (C)"), option({ value: "pasteNotes" }, "Paste Pattern Notes (V)"), option({ value: "pasteNumbers" }, "Paste Pattern Numbers (" + ctrlSymbol + "⇧V)"), option({ value: "insertBars" }, "Insert Bar (⏎)"), option({ value: "deleteBars" }, "Delete Selected Bars (⌫)"), option({ value: "insertChannel" }, "Insert Channel (" + ctrlSymbol + "⏎)"), option({ value: "deleteChannel" }, "Delete Selected Channels (" + ctrlSymbol + "⌫)"), option({ value: "selectAll" }, "Select All (A)"), option({ value: "selectChannel" }, "Select Channel (⇧A)"), option({ value: "duplicatePatterns" }, "Duplicate Reused Patterns (D)"), option({ value: "transposeUp" }, "Move Notes Up (+ or ⇧+)"), option({ value: "transposeDown" }, "Move Notes Down (- or ⇧-)"), option({ value: "moveNotesSideways" }, "Move All Notes Sideways..."), option({ value: "beatsPerBar" }, "Change Beats Per Bar..."), option({ value: "barCount" }, "Change Song Length..."), option({ value: "channelSettings" }, "Channel Settings... (Q)"), option({ value: "leadGen" }, "Melody / Rhythm Generator... (G)"), option({ value: "duplicateBar" }, "Copy Bar to Next Bar (" + ctrlSymbol + "D)"), option({ value: "clearPattern" }, "Clear Pattern Notes (⇧⌫)"), option({ value: "humanize" }, "Humanize Note Volumes (⇧H)"), option({ value: "quantize" }, "Quantize Notes to Rhythm (⇧Q)"), option({ value: "bouncify" }, "Bouncify Notes..."), option({ value: "liveLoops" }, "Live Loops..."));
             this._optionDefs = flPreferenceDefs();
             this._optionsMenu = select({ style: "width: 100%;" }, option({ selected: true, disabled: true, hidden: hideSelectMenuTitlesInOptions }, "Preferences"), ...this._optionDefs.map(def => option({ value: def[0] }, def[2])));

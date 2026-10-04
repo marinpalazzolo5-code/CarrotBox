@@ -183,6 +183,12 @@
 .carrot-rec-button.cb-recording { background: #e0344d !important; color: white !important; animation: carrot-pulse 1s infinite; }
 @keyframes carrot-pulse { 50% { opacity: 0.65; } }
 .carrot-seed { display: flex; flex-direction: column; gap: 2px; align-items: stretch; }
+.carrot-kitgen-pads { display: grid; grid-template-columns: 1fr; gap: 3px; max-height: 340px; overflow: auto; }
+.carrot-kitgen-row { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 6px; background: rgba(127,127,127,0.08); }
+.carrot-kitgen-label { flex: 0 0 104px; font-size: 11px; opacity: 0.75; }
+.carrot-kitgen-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.carrot-kitgen-name small { opacity: 0.55; margin-left: 4px; }
+.carrot-kitgen-row .cb-button, .carrot-kitgen-row .cb-toggle { padding: 2px 8px; font-size: 11px; }
 .carrot-gen .cb-section { margin-top: 8px; }
 .carrot-gen .cb-row { gap: 8px 12px; align-items: flex-end; }
 .carrot-gen-top { margin-bottom: 4px; }
@@ -384,7 +390,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
                         [k("F6"), "Channel rack"], [k("F7"), "Piano roll"], [k("F9"), "Mixer (instead of master effects)"], [k("F10"), "Settings"], [k("F1"), "This list"], [k("L"), "Pattern / song mode"],
                     ]],
                 ["Tools", [
-                        [k("K"), "Drum kit / sound kit loader"], [k("G"), "Melody / rhythm generator"], [k(","), "CarrotBox settings"], [k("?"), "This list"], [k("Ctrl", "S"), "Export song"], [k("Ctrl", "O"), "Import song"],
+                        [k("K"), "Drum kit generator / loader"], [k("G"), "Melody / rhythm generator"], [k(","), "CarrotBox settings"], [k("?"), "This list"], [k("Ctrl", "S"), "Export song"], [k("Ctrl", "O"), "Import song"],
                     ]],
             ];
             const body = HTML.div();
@@ -451,14 +457,170 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
         }
         return { picks, byCategory };
     }
+    // ---------------------------------------------------------- kit generator
+    // Builds 12-pad drum kits from the whole built-in library: by genre and
+    // character, with pads you can lock, audition and reshuffle one by one.
+    const CARROT_KITGEN_PADS = [
+        ["kick", "Kick"], ["snare", "Snare"], ["clap", "Clap"], ["hat", "Closed hat"], ["open", "Open hat"], ["tom", "Low tom"],
+        ["tom", "High tom"], ["perc", "Perc 1"], ["perc", "Perc 2"], ["perc", "Perc 3"], ["cymbal", "Cymbal"], ["low", "808 / kick 2"],
+    ];
+    const CARROT_KITGEN_CHARACTERS = [
+        ["Any character", null], ["Punchy", /punch|hard|knock|snap|crack|clicky|thump/i], ["Dark / deep", /dark|deep|sub|round|boom|rumble|low/i],
+        ["Dusty / lo-fi", /dusty|vinyl|lo-?fi|crunch|tape|memphis/i], ["Clean", null], ["Distorted / hard", /distort|blown|hard|trash|gabber|crunchy|rage/i],
+        ["Glitchy / digital", /glitch|bit|digital|chip|laser|zap|blip/i], ["Roomy / big", /room|verb|gated|big|wide|long|washy|boom/i], ["Tight / short", /tight|short|crisp|snap|piccolo/i],
+    ];
+    class CarrotKitGenerator {
+        // Every drum sound in the library with its role and genre (built once).
+        static pool() {
+            if (CarrotKitGenerator._pool)
+                return CarrotKitGenerator._pool;
+            const pool = [];
+            const role = (path, name) => {
+                if (/\/Open Hats\//.test(path) || /open[ -]?hat|\bohh?\b/i.test(name))
+                    return "open";
+                if (/\/Kicks\//.test(path) || /kick|\bbd\b/i.test(name))
+                    return "kick";
+                if (/\/Snares\//.test(path) || /snare/i.test(name))
+                    return "snare";
+                if (/\/Claps\//.test(path) || /clap/i.test(name))
+                    return "clap";
+                if (/\/Hats\//.test(path) || /hat\b|hi-?hat/i.test(name))
+                    return "hat";
+                if (/\/Toms\//.test(path) || /\btom\b/i.test(name))
+                    return "tom";
+                if (/\/Cymbals\//.test(path) || /crash|ride|splash|china|cymbal/i.test(name))
+                    return "cymbal";
+                if (/808/.test(name) && /Bass|808s/.test(path))
+                    return "low";
+                if (/\/Percussion\//.test(path) || /^Drums\/Percussion|World Percussion/.test(path))
+                    return "perc";
+                return null;
+            };
+            for (const item of FLSoundFactory.getCatalog()) {
+                if (/^(Loops|Instruments|FX)\//.test(item.path) || /\/(Melodic|FX|Vocal Chops|Loops?)\//.test(item.path) || /Synth One-Shots|Chord Stabs|FX Toolkit|Vocal Chops|Foley/.test(item.path))
+                    continue;
+                if (/808s In Every Key/.test(item.path))
+                    continue;
+                const r = role(item.path, item.name);
+                if (!r)
+                    continue;
+                const parts = item.path.split("/");
+                const genre = parts[0] == "Packs" || parts[0] == "Genre Kits" || parts[0] == "Drum Machines" ? parts[1] : parts[0] == "Drums" ? "Classic drums" : parts[0];
+                pool.push({ key: item.key, name: item.name, role: r, genre, path: item.path });
+            }
+            CarrotKitGenerator._pool = pool;
+            return pool;
+        }
+        static genres() {
+            const counts = new Map();
+            for (const s of CarrotKitGenerator.pool())
+                counts.set(s.genre, (counts.get(s.genre) || 0) + 1);
+            return Array.from(counts.keys()).filter(g => counts.get(g) >= 12).sort((a, b) => a.localeCompare(b));
+        }
+        // Picks a sound for a pad. avoid: keys already in the kit.
+        static pick(role, genre, character, avoid, rand = Math.random) {
+            const pool = CarrotKitGenerator.pool();
+            const re = CARROT_KITGEN_CHARACTERS[character] ? CARROT_KITGEN_CHARACTERS[character][1] : null;
+            const clean = CARROT_KITGEN_CHARACTERS[character] && CARROT_KITGEN_CHARACTERS[character][0] == "Clean";
+            const lookup = role == "low" ? ["low", "kick"] : [role];
+            for (const r of lookup) {
+                let list = pool.filter(s => s.role == r && !avoid.has(s.key));
+                const inGenre = genre ? list.filter(s => s.genre == genre) : list;
+                if (inGenre.length > 0)
+                    list = inGenre;
+                if (re) {
+                    const matching = list.filter(s => re.test(s.name));
+                    if (matching.length > 0)
+                        list = matching;
+                }
+                else if (clean) {
+                    const plain = list.filter(s => !/dusty|vinyl|crunch|distort|blown|trash|glitch|bit|verb|room/i.test(s.name));
+                    if (plain.length > 0)
+                        list = plain;
+                }
+                if (list.length > 0)
+                    return list[Math.floor(rand() * list.length)];
+            }
+            return null;
+        }
+        static generate(genre, character, current = [], locks = []) {
+            const pads = [];
+            const avoid = new Set();
+            CARROT_KITGEN_PADS.forEach(([role], i) => {
+                if (locks[i] && current[i]) {
+                    pads.push(current[i]);
+                    avoid.add(current[i].key);
+                }
+                else
+                    pads.push(null);
+            });
+            CARROT_KITGEN_PADS.forEach(([role], i) => {
+                if (pads[i])
+                    return;
+                const s = CarrotKitGenerator.pick(role, genre, character, avoid);
+                pads[i] = s;
+                if (s)
+                    avoid.add(s.key);
+            });
+            // Toms: the lower-sounding name on the low pad.
+            if (pads[5] && pads[6] && !locks[5] && !locks[6] && /high|hi\b/i.test(pads[5].name) && !/high|hi\b/i.test(pads[6].name))
+                [pads[5], pads[6]] = [pads[6], pads[5]];
+            return pads;
+        }
+        static saved() {
+            try {
+                const list = JSON.parse(window.localStorage.getItem("carrotGeneratedKits") || "[]");
+                return Array.isArray(list) ? list : [];
+            }
+            catch (error) {
+                return [];
+            }
+        }
+        static save(list) {
+            try {
+                window.localStorage.setItem("carrotGeneratedKits", JSON.stringify(list.slice(0, 60)));
+            }
+            catch (error) {
+                flToast("Couldn't save the kit (browser storage is full or blocked).");
+            }
+        }
+        // Puts a kit (array of {key, name} or null) on the FPC pads of the current instrument.
+        static loadOntoFPC(doc, pads, kitName) {
+            const instrument = flCurrentInstrument(doc);
+            doc.record(new ChangeFL(doc, () => {
+                if (instrument.type != FLConfig.typeFPC) {
+                    instrument.type = FLConfig.typeFPC;
+                    instrument.chord = Config.chords.dictionary["simultaneous"].index;
+                    instrument.effects &= ~(1 << 11);
+                    instrument.clearInvalidEnvelopeTargets();
+                }
+                const fpc = instrument.fl.fpc;
+                fpc.pads.forEach((pad, i) => {
+                    pad.reset();
+                    const s = pads[i];
+                    if (!s)
+                        return;
+                    pad.sampleId = "b:" + s.key;
+                    pad.name = s.name;
+                    pad.cut = i == 3 || i == 4 ? 1 : 0;
+                });
+                fpc.kitName = kitName;
+            }));
+            for (const pad of instrument.fl.fpc.pads)
+                if (pad.sampleId)
+                    FLSampleBank.request(pad.sampleId);
+        }
+    }
     class CarrotKitLoader extends CarrotFloatingWindow {
-        static open(editor, tab = 0) {
+        // tab: "generate", "load", "mine", "builtin", "packs" (or an index)
+        static open(editor, tab = "generate") {
             const win = CarrotWindows.openPanel("kits", () => new CarrotKitLoader(editor));
-            win._tabs.show(tab);
+            const names = ["generate", "load", "mine", "builtin", "packs"];
+            win._tabs.show(typeof tab == "number" ? tab : Math.max(0, names.indexOf(tab)));
             return win;
         }
         constructor(editor) {
-            super(editor, { key: "kits", title: "Drum Kit / Sound Kit Loader", color: "#ff9b21", width: 560 });
+            super(editor, { key: "kits", title: "Drum Kits: Generator and Loader", color: "#ff9b21", width: 620 });
             this._doc = editor.doc;
             this._status = HTML.div({ class: "cb-hint", style: "min-height: 16px; margin-top: 6px;" });
             // ---- Load tab
@@ -497,11 +659,19 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
             const myTab = HTML.div(CarrotUI.hint("Kits you've imported live in this browser. Auto-map picks a kick, snare, clap, hats, percs, toms, an 808 and a cymbal for the 12 FPC pads."), HTML.div({ style: "height: 6px;" }), this._myKits);
             // ---- Built-in kits tab
             const builtIn = HTML.div({ class: "carrot-list" });
+            const builtSearch = HTML.input({ type: "search", placeholder: "Search " + FLSoundFactory.getKits().length + " kits (rock, drill, 808...)", style: "width: 100%; box-sizing: border-box; margin-bottom: 6px;" });
+            for (const type of ["keydown", "keyup", "keypress"])
+                builtSearch.addEventListener(type, (event) => event.stopPropagation());
+            builtSearch.addEventListener("input", () => {
+                const q = builtSearch.value.trim().toLowerCase();
+                for (const row of builtIn.children)
+                    row.style.display = !q || row.textContent.toLowerCase().includes(q) ? "" : "none";
+            });
             for (const kit of FLSoundFactory.getKits()) {
                 const names = kit.pads.slice(0, 5).map(p => (FLSoundFactory.getInfo(p[0]) || { name: p[0] }).name).join(", ");
                 builtIn.appendChild(HTML.div({ class: "carrot-list-row" }, HTML.span({ class: "carrot-grow", title: names }, HTML.b(kit.name), HTML.span({ class: "cb-hint" }, "  " + names + "…")), CarrotUI.button("Load into FPC", () => this._loadBuiltin(kit.name), { primary: true })));
             }
-            const builtTab = HTML.div(CarrotUI.hint("Built-in kits load onto FPC pads on the current drum channel (one is created if needed)."), HTML.div({ style: "height: 6px;" }), builtIn);
+            const builtTab = HTML.div(CarrotUI.hint("Built-in kits load onto FPC pads on the current drum channel (one is created if needed)."), HTML.div({ style: "height: 6px;" }), builtSearch, builtIn);
             // ---- FL Studio packs tab
             const packsInput = HTML.input({ type: "file", style: "display: none;" });
             packsInput.setAttribute("webkitdirectory", "");
@@ -511,13 +681,13 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
                 packsInput.value = "";
             });
             const packsTab = HTML.div(HTML.p({ class: "cb-hint", style: "margin: 0 0 6px;" }, "If FL Studio is installed on this computer you can bring its whole sample library (the Packs folder) into CarrotBox. Choose the folder below; the sounds are copied into this browser, so it can take a minute for big libraries."), HTML.div({ class: "carrot-list" }, HTML.div({ class: "carrot-list-row" }, HTML.b("Windows"), HTML.span({ class: "carrot-grow", style: "user-select: text;" }, "C:\\Program Files\\Image-Line\\FL Studio 21\\Data\\Patches\\Packs")), HTML.div({ class: "carrot-list-row" }, HTML.b("macOS"), HTML.span({ class: "carrot-grow", style: "user-select: text;" }, "Applications ▸ FL Studio 21 ▸ (right-click) Show Package Contents ▸ Contents/Resources/FL/Data/Patches/Packs")), HTML.div({ class: "carrot-list-row" }, HTML.b("User data"), HTML.span({ class: "carrot-grow", style: "user-select: text;" }, "Documents/Image-Line/FL Studio/Data/Patches/Packs (packs you downloaded)"))), HTML.div({ style: "display: flex; justify-content: center; margin-top: 10px;" }, CarrotUI.button("Choose Packs folder…", () => packsInput.click(), { primary: true })), packsInput, CarrotUI.hint("Tip: on macOS, press ⌘⇧G in the folder picker and paste the path. Your version number may differ (20, 21, 2024…)."));
-            this._tabs = CarrotUI.tabs([["Load a kit", loadTab], ["My kits", myTab], ["Built-in kits", builtTab], ["FL Studio Packs", packsTab]], (index) => {
-                if (index == 1)
+            this._tabs = CarrotUI.tabs([["Kit generator", this._buildGenerator()], ["Load a kit", loadTab], ["My kits", myTab], ["Built-in kits", builtTab], ["FL Studio Packs", packsTab]], (index) => {
+                if (index == 2)
                     this._renderMyKits();
             });
             this.setBody(HTML.div(this._tabs, this._status));
             this._kitListener = () => {
-                if (this._tabs.current == 1)
+                if (this._tabs.current == 2)
                     this._renderMyKits();
             };
             FLSampleBank.onChange(this._kitListener);
@@ -615,6 +785,129 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
                 doc.song.channels[doc.channel].name = "808";
             }));
         }
+        _buildGenerator() {
+            let saved = {};
+            try {
+                saved = JSON.parse(window.localStorage.getItem("carrotKitGen") || "{}") || {};
+            }
+            catch (error) { }
+            const genres = CarrotKitGenerator.genres();
+            this._gen = { genre: Math.max(0, genres.indexOf(saved.genre) + 1), character: saved.character | 0, pads: [], locks: new Array(12).fill(false), mix: !!saved.mix };
+            const g = this._gen;
+            const remember = () => {
+                try {
+                    window.localStorage.setItem("carrotKitGen", JSON.stringify({ genre: genres[g.genre - 1] || null, character: g.character, mix: g.mix }));
+                }
+                catch (error) { }
+            };
+            const genreSelect = CarrotUI.select({ label: "Genre", options: ["Any genre"].concat(genres), value: g.genre, onChange: (v) => { g.genre = v; remember(); } });
+            const characterSelect = CarrotUI.select({ label: "Character", options: CARROT_KITGEN_CHARACTERS.map(c => c[0]), value: g.character, onChange: (v) => { g.character = v; remember(); } });
+            const mixToggle = CarrotUI.toggle({ label: "Mix genres", value: g.mix, title: "Take a few pads from other genres", onChange: (v) => { g.mix = v; remember(); } });
+            const rows = HTML.div({ class: "carrot-kitgen-pads" });
+            const nameInput = HTML.input({ type: "text", value: "", placeholder: "Kit name", style: "flex: 1 1 160px; min-width: 120px;" });
+            for (const type of ["keydown", "keyup", "keypress"])
+                nameInput.addEventListener(type, (event) => event.stopPropagation());
+            const genreForPad = () => {
+                const genre = genres[g.genre - 1] || null;
+                return g.mix && genre && Math.random() < 0.25 ? null : genre;
+            };
+            const render = () => {
+                rows.innerHTML = "";
+                CARROT_KITGEN_PADS.forEach(([role, label], i) => {
+                    const s = g.pads[i];
+                    const lock = CarrotUI.toggle({ label: "Lock", value: g.locks[i], title: "Keep this pad when generating", onChange: (v) => { g.locks[i] = v; } });
+                    const play = CarrotUI.button("Play", () => { if (s) FLSampleBank.preview("b:" + s.key); }, { title: "Hear this pad" });
+                    const shuffle = CarrotUI.button("Shuffle", () => {
+                        const avoid = new Set(g.pads.filter(x => x).map(x => x.key));
+                        const next = CarrotKitGenerator.pick(role, genreForPad(), g.character, avoid);
+                        if (next) {
+                            g.pads[i] = next;
+                            render();
+                            FLSampleBank.preview("b:" + next.key);
+                        }
+                    }, { title: "Another sound for this pad" });
+                    rows.appendChild(HTML.div({ class: "carrot-kitgen-row" }, HTML.span({ class: "carrot-kitgen-label" }, String(i + 1) + "  " + label), HTML.span({ class: "carrot-kitgen-name", title: s ? s.path : "" }, s ? s.name : "(nothing found)", s ? HTML.small(s.genre) : ""), play, shuffle, lock));
+                });
+            };
+            const generate = () => {
+                const genre = genres[g.genre - 1] || null;
+                const pads = CarrotKitGenerator.generate(genre, g.character, g.pads, g.locks);
+                if (g.mix && genre) {
+                    const avoid = new Set(pads.filter(x => x).map(x => x.key));
+                    for (let i = 0; i < pads.length; i++)
+                        if (!g.locks[i] && Math.random() < 0.25) {
+                            const other = CarrotKitGenerator.pick(CARROT_KITGEN_PADS[i][0], null, g.character, avoid);
+                            if (other) {
+                                pads[i] = other;
+                                avoid.add(other.key);
+                            }
+                        }
+                }
+                g.pads = pads;
+                const character = g.character > 0 ? CARROT_KITGEN_CHARACTERS[g.character][0].split(" /")[0] + " " : "";
+                nameInput.value = (character + (genre || "Mixed") + " Kit " + (1 + Math.floor(Math.random() * 99))).replace(/\s+/g, " ");
+                render();
+            };
+            const playAll = () => {
+                g.pads.forEach((s, i) => { if (s) setTimeout(() => FLSampleBank.preview("b:" + s.key), i * 260); });
+            };
+            const load = () => {
+                if (!g.pads.some(x => x))
+                    return;
+                if (!this._ensureDrumChannel())
+                    return;
+                CarrotKitGenerator.loadOntoFPC(this._doc, g.pads, nameInput.value || "Generated kit");
+                flToast("Loaded " + (nameInput.value || "the kit") + " onto the FPC pads");
+                carrotUISound("success");
+            };
+            const savedList = HTML.div({ class: "carrot-list" });
+            const fromKeys = (keys) => {
+                const pool = CarrotKitGenerator.pool();
+                return keys.map(key => key ? pool.find(s => s.key == key) || null : null);
+            };
+            const renderSaved = () => {
+                savedList.innerHTML = "";
+                const list = CarrotKitGenerator.saved();
+                if (list.length == 0) {
+                    savedList.appendChild(CarrotUI.hint("Kits you save here stay in this browser."));
+                    return;
+                }
+                list.forEach((kit, k) => {
+                    savedList.appendChild(HTML.div({ class: "carrot-list-row" }, HTML.span({ class: "carrot-grow" }, HTML.b(kit.name), HTML.span({ class: "cb-hint" }, "  " + kit.pads.filter(x => x).length + " pads")), CarrotUI.button("Edit", () => {
+                        g.pads = fromKeys(kit.pads);
+                        nameInput.value = kit.name;
+                        render();
+                    }), CarrotUI.button("Load into FPC", () => {
+                        if (!this._ensureDrumChannel())
+                            return;
+                        CarrotKitGenerator.loadOntoFPC(this._doc, fromKeys(kit.pads), kit.name);
+                        flToast("Loaded " + kit.name);
+                    }, { primary: true }), CarrotUI.button("x", () => {
+                        const next = CarrotKitGenerator.saved();
+                        next.splice(k, 1);
+                        CarrotKitGenerator.save(next);
+                        renderSaved();
+                    }, { title: "Delete this saved kit" })));
+                });
+            };
+            const save = () => {
+                if (!g.pads.some(x => x))
+                    return;
+                const list = CarrotKitGenerator.saved();
+                list.unshift({ name: nameInput.value || "Generated kit", pads: g.pads.map(s => s ? s.key : null) });
+                CarrotKitGenerator.save(list);
+                renderSaved();
+                flToast("Saved " + (nameInput.value || "the kit"));
+            };
+            generate();
+            renderSaved();
+            return HTML.div({ class: "carrot-kitgen" },
+                CarrotUI.hint("Builds a 12-pad kit from " + CarrotKitGenerator.pool().length + " drum sounds in " + genres.length + " genres. Lock the pads you like and generate again; Shuffle changes one pad."),
+                HTML.div({ class: "cb-row", style: "margin: 8px 0; align-items: flex-end;" }, genreSelect, characterSelect, mixToggle, CarrotUI.button("Generate kit", generate, { primary: true })),
+                rows,
+                HTML.div({ class: "cb-row", style: "margin-top: 8px;" }, nameInput, CarrotUI.button("Play all", playAll), CarrotUI.button("Save kit", save), CarrotUI.button("Load into FPC", load, { primary: true })),
+                CarrotUI.section("Saved kits", savedList));
+        }
         _loadBuiltin(name) {
             if (!this._ensureDrumChannel())
                 return;
@@ -631,7 +924,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
             }
             for (const kit of FLKitLibrary.kits.slice().reverse()) {
                 this._myKits.appendChild(HTML.div({ class: "carrot-list-row" }, HTML.span({ class: "carrot-grow" }, HTML.b(kit.name), HTML.span({ class: "cb-hint" }, "  " + kit.files.length + " sounds")), CarrotUI.button("→ FPC", () => this._loadKitToFPC(kit), { primary: true, title: "Auto-map onto the FPC pads" }), CarrotUI.button("Details", () => {
-                    this._tabs.show(0);
+                    this._tabs.show(1);
                     this._showResult(kit);
                 }), CarrotUI.button("x", async () => {
                     if (!window.confirm("Remove “" + kit.name + "” from this browser?"))
@@ -649,7 +942,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
         dnb: ["Drum & Bass Kit"], breakcore: ["Breakcore Kit", "Drum & Bass Kit"], lofi: ["Lo-Fi Kit"], boombap: ["Boom Bap Kit"], rnb: ["R&B Kit", "Lo-Fi Kit"],
         afro: ["Afro / Amapiano Kit"], reggaeton: ["Reggaeton Kit", "TR-808 Kit"], rock: ["Rock Kit", "Acoustic Kit"], indie: ["Indie Kit", "Acoustic Kit"],
         synthwave: ["Synthwave Kit", "TR-909 Kit"], chiptune: ["Chiptune Kit", "TR-808 Kit"], hyperpop: ["Hyperpop Kit", "Trap Kit"], webcore: ["Webcore Kit", "Hyperpop Kit", "Trap Kit"],
-        funk: ["Funk Kit", "Acoustic Kit"], jazz: ["Jazz Kit", "Acoustic Kit"], ambient: ["Ambient Kit", "Lo-Fi Kit"],
+        funk: ["Disco & Funk Kit", "Funk Kit", "Acoustic Kit"], jazz: ["Jazz Kit", "Acoustic Kit"], ambient: ["Ambient Kit", "Lo-Fi Kit"],
     };
     // [bass, chords, lead]
     const CARROT_GEN_SOUNDS = {
@@ -1757,8 +2050,8 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
             case "flPlugins": return CarrotPluginManager.open(editor);
             case "flSettings": return CarrotSettingsPanel.open(editor);
             case "flShortcuts": return CarrotShortcutsPanel.open(editor);
-            case "flKits": return CarrotKitLoader.open(editor, 0);
-            case "flKits:packs": return CarrotKitLoader.open(editor, 3);
+            case "flKits": return CarrotKitLoader.open(editor, "generate");
+            case "flKits:packs": return CarrotKitLoader.open(editor, "packs");
             case "flLeadGen": return CarrotGeneratorPanel.open(editor);
             case "flRecorder": return CarrotRecorder.open(editor);
             case "flHardware": return CarrotHardwarePanel.open(editor);
@@ -1812,7 +2105,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
             return false;
         switch (key) {
             case "k":
-                CarrotKitLoader.open(editor, 0);
+                CarrotKitLoader.open(editor, "generate");
                 break;
             case "g":
                 CarrotGeneratorPanel.open(editor);
@@ -1871,7 +2164,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
         editor._carrotGenButton = flIconButton("--carrot-spark-symbol", "Melody / rhythm generator (G)");
         editor._carrotBar = HTML.div({ class: "fl-bar carrot-bar-2" }, editor._carrotKitButton, editor._carrotPluginButton, editor._carrotRecordButton, editor._carrotGenButton);
         editor._flBar.parentElement.insertBefore(editor._carrotBar, editor._flBar.nextSibling);
-        editor._carrotKitButton.addEventListener("click", () => CarrotKitLoader.open(editor, 0));
+        editor._carrotKitButton.addEventListener("click", () => CarrotKitLoader.open(editor, "generate"));
         editor._carrotPluginButton.addEventListener("click", (event) => {
             if (event.shiftKey || CarrotPlugins.installedIds().length == 0)
                 CarrotPluginManager.open(editor);

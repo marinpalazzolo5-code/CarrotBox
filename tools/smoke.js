@@ -142,7 +142,28 @@ function check(label, ok, detail) {
 	});
 	check("Utawa parses English, Japanese, Spanish and Chinese lyrics",
 		lyrics.en == "h e | l ou | n ai t" && lyrics.ja == "k o | hum:n | n i | ch i | w a" && lyrics.es == "p e | rr o | k o | jr a | s o n" && lyrics.zh == "n i | h au | sh ue e", JSON.stringify(lyrics));
-	check("sound library has over 2,600 sounds", loops.sounds >= 2600, String(loops.sounds));
+	check("sound library has over 5,600 sounds", loops.sounds >= 5600, String(loops.sounds));
+	// ---- Sound Library 3 and the kit generator
+	const lib3 = await page.evaluate(() => {
+		const F = beepbox.FLSoundFactory;
+		const kits = F.getKits();
+		const genres = ["Breakcore", "Underground UG", "UK Drill", "Rock", "Indie", "Webcore", "Digicore"];
+		const result = { kits: kits.length, missing: [], bad: [] };
+		for (const g of genres) {
+			const kit = kits.find(k => k.name == g + " Kit");
+			if (!kit) { result.missing.push(g); continue; }
+			// render the kit's kick, snare and hat
+			for (const [key] of kit.pads.slice(0, 4)) {
+				const r = F.render(key);
+				let peak = 0, bad = 0;
+				for (const v of r.pcm) { if (!Number.isFinite(v)) bad++; else peak = Math.max(peak, Math.abs(v)); }
+				if (bad || peak < 0.05) result.bad.push(key);
+			}
+		}
+		result.presets = beepbox.EditorConfig.presetCategories.filter(c => /Genre Drum Kits/.test(c.name)).reduce((n, c) => n + c.presets.length, 0);
+		return result;
+	});
+	check("genre kits (breakcore, UG, drill, rock, indie, webcore, digicore...) exist and sound", lib3.kits >= 110 && lib3.missing.length == 0 && lib3.bad.length == 0 && lib3.presets >= 95, JSON.stringify(lib3));
 
 	// ---- FL Studio interface mode turns on and off cleanly
 	const fl = await page.evaluate(async () => {
