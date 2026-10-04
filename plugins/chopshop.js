@@ -381,11 +381,14 @@
         fill(params);
         const mode = params.mode | 0;
         let cue = 0;
-        if (mode == 0) cue = info.isNoise ? Math.round(info.notePitch) : Math.round(info.notePitch - params.base);
-        const voice = { cue, pos: -1, start: 0, end: 0, dir: 1, level: 0, released: false, done: false, fade: 0, attackSamples: 0, rate: 1, lastId: null };
-        voice.invalid = mode == 0 && (cue < 0 || cue >= CUES);
-        if (voice.invalid) voice.done = true;
-        return voice;
+        if (mode == 0) {
+            // Cue 1 sits on the first key and the cues run upward; keys outside that range repeat the cues
+            // so every key plays something.
+            const raw = info.isNoise ? Math.round(info.notePitch) : Math.round(info.notePitch - params.base);
+            const count = Math.max(1, Math.min(CUES, params.cues.length));
+            cue = ((raw % count) + count) % count;
+        }
+        return { cue, pos: -1, start: 0, end: 0, dir: 1, level: 0, released: false, done: false, fade: 0, attackSamples: 0, rate: 1, lastId: null };
     }
     function render(voice, out, start, len, info) {
         if (voice.done) return;
@@ -756,7 +759,7 @@
                     host.knob("release", { label: "Release", min: 5, max: 1000, def: 80, unit: "ms", curve: "exp", small: true }),
                     host.toggle("reverse", { label: "Reverse", def: false }),
                     host.knob("base", { label: "First key", min: 0, max: 72, step: 1, def: 48, small: true, format: (v) => String(Math.round(v)), title: "The note (pitch number) that plays cue 1 on a pitched channel", onChange: () => refreshPads() }))));
-        const side = HTML.div(CarrotUI.section("Pads", padGrid, CarrotUI.hint("Cue 1 plays from the first key, then up the keyboard. On a drum channel, cue 1 is the bottom row.")), CarrotUI.section("Cues", CarrotUI.row(equalButton, gridButton, chopButton)));
+        const side = HTML.div(CarrotUI.section("Pads", padGrid, CarrotUI.hint("Cue 1 plays from the first key, then up the keyboard, and the cues repeat on the other keys. On a drum channel, cue 1 is the bottom row.")), CarrotUI.section("Cues", CarrotUI.row(equalButton, gridButton, chopButton)));
         const main = HTML.div({ class: "cb-chop-main" }, HTML.div(wave, info, status, controls), side);
         root.appendChild(main);
 

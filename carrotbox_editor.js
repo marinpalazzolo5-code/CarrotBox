@@ -14154,10 +14154,14 @@ FLKitLibrary._loadPromise = null;
                 reverse = settings.reverse;
                 oneShot = settings.oneShot;
                 if (type == FLConfig.typeSlicex) {
-                    if (tone.flPad == null) {
-                        tone.flPad = ctx.isNoiseChannel ? tone.pitches[0] : (pitch - 48);
-                    }
                     const regions = settings.getSliceRegions();
+                    if (tone.flPad == null) {
+                        // Slice 1 sits on C4 and the slices run upward; keys outside that range repeat the
+                        // slices (like FPC does with its pads) so every key plays something.
+                        const raw = ctx.isNoiseChannel ? tone.pitches[0] : (pitch - 48);
+                        const count = Math.max(1, regions.length);
+                        tone.flPad = ((raw % count) + count) % count;
+                    }
                     if (tone.flPad < 0 || tone.flPad >= regions.length) {
                         sampleId = null;
                     }
@@ -30754,7 +30758,7 @@ You should be redirected to the song at:<br /><br />
                 if (isSlicex) {
                     const count = s.getSliceRegions().length;
                     const isNoise = doc.song.getChannelIsNoise(doc.channel);
-                    this._sliceInfo.textContent = count + " slices · " + (isNoise ? "rows 1-" + Math.min(12, count) : "keys from C4 (" + flMidiName(Config.keys[doc.song.key].basePitch + 48) + ") up");
+                    this._sliceInfo.textContent = count + " slices · " + (isNoise ? "rows 1-" + Math.min(12, count) + ", repeating" : "keys from C4 (" + flMidiName(Config.keys[doc.song.key].basePitch + 48) + ") up, repeating");
                 }
                 const waveKey = [s.sampleId, entry ? entry.status : "", s.start, s.end, s.loop, s.loopStart, s.loopEnd, s.slices.join(","), isSlicex, this._waveCanvas.clientWidth, ColorConfig._styleElement.textContent.length].join("|");
                 if (waveKey != this._renderedWaveKey) {
@@ -32627,7 +32631,7 @@ You should be redirected to the song at:<br /><br />
             this._samplerRow.style.display = this._isSlicex ? "none" : "";
             this._slicexRow.style.display = this._isSlicex ? "" : "none";
             this._hint.textContent = this._isSlicex
-                ? "Click the waveform to add a slice, drag slices to move them, right-click to remove one, double-click a slice to hear it. Slices play from key C4 upward (or drum rows 1-12)."
+                ? "Click the waveform to add a slice, drag slices to move them, right-click to remove one, double-click a slice to hear it. Slices play from key C4 upward (or drum rows 1-12) and repeat across the rest of the keyboard."
                 : "Drag the green (start), red (end) and yellow (loop) markers. Double-click to hear the sample. Scroll to zoom.";
             this._browseButton.addEventListener("click", () => { this.flClose(); editor.flShowBrowser(true); });
             this._importButton.addEventListener("click", () => this._importInput.click());

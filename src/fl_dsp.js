@@ -59,10 +59,14 @@
                 reverse = settings.reverse;
                 oneShot = settings.oneShot;
                 if (type == FLConfig.typeSlicex) {
-                    if (tone.flPad == null) {
-                        tone.flPad = ctx.isNoiseChannel ? tone.pitches[0] : (pitch - 48);
-                    }
                     const regions = settings.getSliceRegions();
+                    if (tone.flPad == null) {
+                        // Slice 1 sits on C4 and the slices run upward; keys outside that range repeat the
+                        // slices (like FPC does with its pads) so every key plays something.
+                        const raw = ctx.isNoiseChannel ? tone.pitches[0] : (pitch - 48);
+                        const count = Math.max(1, regions.length);
+                        tone.flPad = ((raw % count) + count) % count;
+                    }
                     if (tone.flPad < 0 || tone.flPad >= regions.length) {
                         sampleId = null;
                     }

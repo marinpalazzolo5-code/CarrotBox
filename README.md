@@ -132,7 +132,7 @@ Slicex chops a loop into slices and spreads them over the keyboard so you can pl
 - **Auto Slice** by detected hits or into 4, 8, 16 or 32 equal parts. The sample editor adds a sensitivity slider for **Detect Hits**, more equal-slice choices and **Clear Slices**.
 - Click the waveform in the sample editor to add a slice, drag a slice to move it, right-click to remove it, double-click to hear it.
 - **Chop to Pattern** writes one note per slice into the current pattern so the loop plays back as it was.
-- On a pitch channel, slice 1 is on **C4** and the slices run upward from there (the panel prints the exact range). On a drum channel, rows 1 to 12 play slices 1 to 12.
+- On a pitch channel, slice 1 is on **C4** and the slices run upward from there (the panel prints the exact range). Keys outside that range repeat the slices, so every key plays something. On a drum channel, rows 1 to 12 play slices 1 to 12 (and repeat if there are fewer slices than rows).
 
 ### FPC
 
@@ -226,7 +226,7 @@ A sample chopper in the spirit of Serato Sample.
 - it **detects the tempo (BPM) and the key** of the sample. Both can be corrected by hand and re-analyzed, and neither is guessed for very short sounds
 - **Key shift** changes the pitch without changing the speed, and **Sync to song tempo** stretches the sample to the song's BPM without changing the pitch (both use high quality time stretching)
 - drag a cue marker to move it, click the waveform to hear from that point, double-click to put the selected pad's cue there, snap cues to the beat grid
-- cue 1 plays from the first key and the rest follow up the keyboard (on a drum channel, cue 1 is the bottom row)
+- cue 1 plays from the first key and the rest follow up the keyboard; keys outside that range repeat the cues, so every key plays (on a drum channel, cue 1 is the bottom row)
 - **Chop into pattern** writes the cues as notes into the current pattern so the chopped loop plays back on its own
 
 ### Sketchpad (idea sketcher)
@@ -372,7 +372,7 @@ Single-letter shortcuts are paused while you are typing in a text box, a plugin 
 
 **A song with a plugin opens with a plain instrument.** The plugin is not installed in this browser (it was removed in the Plugin Manager, or its file could not be loaded). Install it in the Plugin Manager and reopen the song.
 
-**A sample plays only some notes.** Sampler plays every key. Slicex plays one slice per key from C4 up (the panel tells you the range), and FPC plays one pad per row. In Chop Shop, cue 1 sits on the first key and the rest follow upward.
+**A sample plays only some notes.** Sampler plays every key. Slicex plays one slice per key from C4 up and repeats the slices on the other keys (the panel tells you the range), and FPC plays one pad per row (pitch channels play the pad for the note's pitch class). In Chop Shop, cue 1 sits on the first key, the rest follow upward and the cues repeat on the other keys.
 
 **A sample from a file does not load.** CarrotBox decodes what your browser can decode (WAV, MP3, OGG, FLAC and AAC in most browsers). A file that fails to decode shows a message instead of breaking the editor.
 
@@ -450,7 +450,7 @@ perl build.pl
 
 ### Testing
 
-`tools/smoke.js` is a headless browser test that starts the editor, opens and closes every plugin window in all three ways, renders every preset of the instrument plugins offline and checks the audio is finite and audible, and fails on any console error.
+`tools/smoke.js` is a headless browser test that starts the editor, opens and closes every plugin window in all three ways, renders every preset of the instrument plugins offline and checks the audio is finite and audible, checks that Sampler, Slicex and FPC sound on pitch and drum keys across the whole range, and fails on any console error.
 
 ```sh
 npm install playwright      # once, plus: npx playwright install chromium
@@ -534,7 +534,7 @@ This section lists the main problems found in the first version of the mod and w
 - A race that left a kit half-loaded when a note was played too early was fixed; notes wait for their sample.
 - Choosing, dropping or decoding a bad file shows a message instead of leaving the editor in a broken state.
 - Every instrument panel is clamped to a valid instrument, which fixes crashes after deleting channels or switching types quickly.
-- Slicex states its key range in the panel, and FPC / Chop Shop explain where their pads and cues are.
+- Slicex played only the few keys that had a slice and was silent everywhere else. Slices now repeat across the keyboard, and the panel states the range where slice 1 sits. FPC / Chop Shop explain where their pads and cues are.
 
 **Windows and UI**
 
@@ -570,7 +570,6 @@ This section lists the main problems found in the first version of the mod and w
 
 - Audio runs on a script processor node (as in BeepBox). A very heavy song on a slow computer can crackle; raise the buffer by closing other tabs or reduce unison voices and effects.
 - Built-in sounds are generated the first time you use them. Almost all take a few milliseconds; the longest melodic loops take about a tenth of a second, which can cause one tiny hiccup if they start while the song is playing.
-- Slicex plays slices from C4 upward only. Use the slice markers if you need a different layout.
 - Imported samples live in your browser. Move them between computers with **Save Project + Samples**.
 - Songs made with CarrotBox only open fully in CarrotBox. BeepBox will ignore the extra data (and the stock BeepBox site cannot play plugin instruments).
 

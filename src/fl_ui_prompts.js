@@ -474,7 +474,7 @@
             this._samplerRow.style.display = this._isSlicex ? "none" : "";
             this._slicexRow.style.display = this._isSlicex ? "" : "none";
             this._hint.textContent = this._isSlicex
-                ? "Click the waveform to add a slice, drag slices to move them, right-click to remove one, double-click a slice to hear it. Slices play from key C4 upward (or drum rows 1-12)."
+                ? "Click the waveform to add a slice, drag slices to move them, right-click to remove one, double-click a slice to hear it. Slices play from key C4 upward (or drum rows 1-12) and repeat across the rest of the keyboard."
                 : "Drag the green (start), red (end) and yellow (loop) markers. Double-click to hear the sample. Scroll to zoom.";
             this._browseButton.addEventListener("click", () => { this.flClose(); editor.flShowBrowser(true); });
             this._importButton.addEventListener("click", () => this._importInput.click());

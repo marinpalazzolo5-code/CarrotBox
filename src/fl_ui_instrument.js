@@ -448,7 +448,7 @@
                 if (isSlicex) {
                     const count = s.getSliceRegions().length;
                     const isNoise = doc.song.getChannelIsNoise(doc.channel);
-                    this._sliceInfo.textContent = count + " slices · " + (isNoise ? "rows 1-" + Math.min(12, count) : "keys from C4 (" + flMidiName(Config.keys[doc.song.key].basePitch + 48) + ") up");
+                    this._sliceInfo.textContent = count + " slices · " + (isNoise ? "rows 1-" + Math.min(12, count) + ", repeating" : "keys from C4 (" + flMidiName(Config.keys[doc.song.key].basePitch + 48) + ") up, repeating");
                 }
                 const waveKey = [s.sampleId, entry ? entry.status : "", s.start, s.end, s.loop, s.loopStart, s.loopEnd, s.slices.join(","), isSlicex, this._waveCanvas.clientWidth, ColorConfig._styleElement.textContent.length].join("|");
                 if (waveKey != this._renderedWaveKey) {

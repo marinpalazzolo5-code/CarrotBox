@@ -5,7 +5,7 @@
 //
 // Checks that the editor starts without errors, that every plugin can be opened and closed
 // (X button, Esc, and Esc with focus in the window), that the instrument plugins make finite,
-// audible sound for every preset, and that a sampler instrument plays on every key.
+// audible sound for every preset, and that Sampler, Slicex and FPC play on every key.
 const path = require("path");
 const serve = require(path.join(__dirname, "serve.js"));
 function loadPlaywright() {
@@ -113,6 +113,51 @@ function check(label, ok, detail) {
 		const r = audio[id];
 		check(id + " renders finite, audible sound for every preset", typeof r == "object" && r.nan == 0 && r.quiet == 0 && r.worstPeak < 4, JSON.stringify(r));
 	}
+
+	// ---- sample instruments must sound on every key, not just some of them
+	const keys = await page.evaluate(async () => {
+		const doc = editor.doc, song = doc.song, synth = doc.synth, FL = beepbox.FLConfig, ppb = beepbox.Config.partsPerBeat;
+		song.beatsPerBar = 4;
+		song.tempo = 150;
+		const noiseChannel = song.pitchChannelCount;
+		for (let c = 0; c < song.channels.length; c++)
+			for (let b = 0; b < song.barCount; b++)
+				if (c != 0 && c != noiseChannel) song.channels[c].bars[b] = 0;
+		const silent = {};
+		const types = [["sampler", FL.typeSampler], ["slicex", FL.typeSlicex], ["fpc", FL.typeFPC]];
+		for (const channelIndex of [0, noiseChannel]) {
+			const isNoise = song.getChannelIsNoise(channelIndex);
+			const channel = song.channels[channelIndex];
+			if (channel.bars[0] == 0) { channel.patterns.push(new beepbox.Pattern()); channel.bars[0] = channel.patterns.length; }
+			const pitches = isNoise ? [0, 3, 5, 8, 11] : [0, 7, 23, 41, 48, 60, 84];
+			for (const [name, type] of types) {
+				channel.instruments[0].setTypeAndReset(type, isNoise);
+				for (const id of beepbox.FLSampleBank.collectSongSampleIds(song)) await beepbox.FLSampleBank.whenReady(id);
+				for (const pitch of pitches) {
+					const pattern = song.getPattern(channelIndex, 0);
+					pattern.notes.length = 0;
+					pattern.notes.push(new beepbox.Note(pitch, 0, ppb, 3, isNoise));
+					synth.samplesPerSecond = 44100;
+					synth.computeDelayBufferSizes();
+					synth.song = song;
+					synth.isPlayingSong = true;
+					synth.warmUpSynthesizer(song);
+					synth.snapToStart();
+					synth.loopRepeatCount = -1;
+					let peak = 0;
+					for (let i = 0; i < 20000; i += 1000) {
+						const l = new Float32Array(1000), r = new Float32Array(1000);
+						synth.synthesize(l, r, 1000, true);
+						for (let j = 0; j < 1000; j++) peak = Math.max(peak, Math.abs(l[j]));
+					}
+					synth.isPlayingSong = false;
+					if (!(peak > 0.001)) (silent[(isNoise ? "drum " : "pitch ") + name] = silent[(isNoise ? "drum " : "pitch ") + name] || []).push(pitch);
+				}
+			}
+		}
+		return silent;
+	});
+	check("sampler, slicex and fpc sound on every key", Object.keys(keys).length == 0, JSON.stringify(keys));
 
 	check("no errors in the console", errors.length == 0, errors.slice(0, 5).join(" | "));
 	await browser.close();
