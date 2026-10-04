@@ -183,6 +183,15 @@
 .carrot-rec-button.cb-recording { background: #e0344d !important; color: white !important; animation: carrot-pulse 1s infinite; }
 @keyframes carrot-pulse { 50% { opacity: 0.65; } }
 .carrot-seed { display: flex; flex-direction: column; gap: 2px; align-items: stretch; }
+.carrot-gen .cb-section { margin-top: 8px; }
+.carrot-gen .cb-row { gap: 8px 12px; align-items: flex-end; }
+.carrot-gen-top { margin-bottom: 4px; }
+.carrot-gen-chords { display: flex; flex-wrap: wrap; gap: 4px; min-height: 22px; margin: 10px 0 4px; }
+.carrot-gen-chord { padding: 2px 8px; border-radius: 10px; font-size: 11px; background: rgba(199,146,234,0.16); border: 1px solid rgba(199,146,234,0.35); }
+.carrot-gen-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.carrot-gen-status { flex: 1 1 220px; min-height: 16px; }
+.carrot-gen-buttons { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.carrot-gen-buttons .cb-button:disabled { opacity: 0.4; }
 .carrot-welcome p { margin: 4px 0; font-size: 12px; line-height: 1.4; }
 /* --------------------------------------------------------------- modern skin */
 html.carrot-modern, html.carrot-modern body { font-family: "Inter", "SF Pro Text", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
@@ -375,7 +384,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
                         [k("F6"), "Channel rack"], [k("F7"), "Piano roll"], [k("F9"), "Mixer (instead of master effects)"], [k("F10"), "Settings"], [k("F1"), "This list"], [k("L"), "Pattern / song mode"],
                     ]],
                 ["Tools", [
-                        [k("K"), "Drum kit / sound kit loader"], [k("G"), "Lead / melody generator"], [k(","), "CarrotBox settings"], [k("?"), "This list"], [k("Ctrl", "S"), "Export song"], [k("Ctrl", "O"), "Import song"],
+                        [k("K"), "Drum kit / sound kit loader"], [k("G"), "Melody / rhythm generator"], [k(","), "CarrotBox settings"], [k("?"), "This list"], [k("Ctrl", "S"), "Export song"], [k("Ctrl", "O"), "Import song"],
                     ]],
             ];
             const body = HTML.div();
@@ -634,36 +643,96 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
         }
     }
     // ------------------------------------------------------------- generator
+    // Drum kit and instrument presets for "Full beat" (first name that exists wins).
+    const CARROT_GEN_KITS = {
+        pop: ["Pop Kit", "TR-909 Kit"], trap: ["Trap Kit"], drill: ["Drill Kit", "Trap Kit"], house: ["House Kit"], techno: ["Techno Kit", "TR-909 Kit"],
+        dnb: ["Drum & Bass Kit"], breakcore: ["Breakcore Kit", "Drum & Bass Kit"], lofi: ["Lo-Fi Kit"], boombap: ["Boom Bap Kit"], rnb: ["R&B Kit", "Lo-Fi Kit"],
+        afro: ["Afro / Amapiano Kit"], reggaeton: ["Reggaeton Kit", "TR-808 Kit"], rock: ["Rock Kit", "Acoustic Kit"], indie: ["Indie Kit", "Acoustic Kit"],
+        synthwave: ["Synthwave Kit", "TR-909 Kit"], chiptune: ["Chiptune Kit", "TR-808 Kit"], hyperpop: ["Hyperpop Kit", "Trap Kit"], webcore: ["Webcore Kit", "Hyperpop Kit", "Trap Kit"],
+        funk: ["Funk Kit", "Acoustic Kit"], jazz: ["Jazz Kit", "Acoustic Kit"], ambient: ["Ambient Kit", "Lo-Fi Kit"],
+    };
+    // [bass, chords, lead]
+    const CARROT_GEN_SOUNDS = {
+        pop: ["3x Osc Sub Bass", "E-Piano (sampled)", "3x Osc Pluck"], trap: ["808 Bass", "Warm Pad (sampled)", "Bell (sampled)"], drill: ["808 Glide Bass", "Strings (sampled)", "Pluck (sampled)"],
+        house: ["Boo Bass (3x Osc)", "Grand Piano (sampled)", "3x Osc Pluck"], techno: ["Acid Bass (sampled)", "Brass Stab (sampled)", "3x Osc Square Lead"], dnb: ["Reese Bass (sampled)", "Warm Pad (sampled)", "Pluck (sampled)"],
+        breakcore: ["Reese Bass (sampled)", "Strings (sampled)", "3x Osc Supersaw"], lofi: ["3x Osc Sub Bass", "E-Piano (sampled)", "Kalimba (sampled)"], boombap: ["3x Osc Sub Bass", "E-Piano (sampled)", "Bell (sampled)"],
+        rnb: ["3x Osc Sub Bass", "E-Piano (sampled)", "Bell (sampled)"], afro: ["Boo Bass (3x Osc)", "Kalimba (sampled)", "Pluck (sampled)"], reggaeton: ["808 Bass (punchy)", "3x Osc Pluck", "3x Osc Square Lead"],
+        rock: ["3x Osc Growl (AM)", "Organ (sampled)", "3x Osc Square Lead"], indie: ["3x Osc (classic)", "Grand Piano (sampled)", "Bell (sampled)"], synthwave: ["3x Osc Sub Bass", "Warm Pad (sampled)", "Supersaw Lead (sampled)"],
+        chiptune: ["3x Osc Square Lead", "3x Osc Pluck", "3x Osc Square Lead"], hyperpop: ["808 Bass (distorted)", "3x Osc Supersaw", "Supersaw Lead (sampled)"], webcore: ["808 Bass (clean)", "Choir Aah (sampled)", "Bell (sampled)"],
+        funk: ["Boo Bass (3x Osc)", "Organ (sampled)", "Brass Stab (sampled)"], jazz: ["3x Osc Sub Bass", "Grand Piano (sampled)", "E-Piano (sampled)"], ambient: ["3x Osc Sub Bass", "Strings (sampled)", "Bell (sampled)"],
+    };
+    const CARROT_GEN_BARS = [1, 2, 4, 8, 16];
+    const CARROT_GEN_SWING = [null, 0, 0.3, 0.6, 0.95];
     class CarrotGeneratorPanel extends CarrotFloatingWindow {
         static open(editor) {
             return CarrotWindows.openPanel("generator", () => new CarrotGeneratorPanel(editor));
         }
         constructor(editor) {
-            super(editor, { key: "generator", title: "Lead / Melody Generator", color: "#c792ea", width: 560 });
+            super(editor, { key: "generator", title: "Melody / Rhythm Generator", color: "#c792ea", width: 660 });
             const doc = editor.doc;
             this._doc = doc;
             this._seed = Math.floor(Math.random() * 100000);
+            this._last = null;
+            this._history = [];
+            this._historyIndex = -1;
             this._lastChannel = null;
+            this._fullChannels = {};
             const isNoise = doc.song.getChannelIsNoise(doc.channel);
-            this._state = { part: isNoise ? 5 : 0, style: 0, bars: 2, form: 0, source: 2, density: 0.5, complexity: 0.4, register: 0, target: 0, play: true };
+            const defaults = { part: 0, style: 0, bars: 2, form: 0, source: 2, density: 0.5, complexity: 0.4, register: 0, target: 0, play: true, progression: 0, chordEvery: 0, notes: 0, contour: 0, swing: 0, harmony: 0, followKick: true, lockRhythm: false, lockNotes: false, loop: false };
+            let saved = {};
+            try {
+                saved = JSON.parse(window.localStorage.getItem("carrotGenerator") || "{}") || {};
+            }
+            catch (error) { }
+            this._state = Object.assign({}, defaults);
+            for (const key in defaults)
+                if (saved[key] != undefined && typeof saved[key] == typeof defaults[key])
+                    this._state[key] = saved[key];
+            const s = this._state;
+            const partIndex = (id) => CARROT_GEN_PARTS.findIndex(p => p[0] == id);
+            if (isNoise && ["drums", "perc", "full"].indexOf(CARROT_GEN_PARTS[s.part] ? CARROT_GEN_PARTS[s.part][0] : "") == -1)
+                s.part = partIndex("drums");
+            s.part = Math.max(0, Math.min(CARROT_GEN_PARTS.length - 1, s.part));
             const styleKeys = Object.keys(CARROT_GEN_STYLES);
             const formKeys = Object.keys(CARROT_GEN_FORMS);
-            const s = this._state;
-            const field = (label, control) => HTML.label({ class: "cb-field" }, label, control);
-            const sel = (options, key, onChange) => {
-                const el = CarrotUI.select({ options, value: s[key], onChange: (v) => {
-                        s[key] = v;
-                        if (onChange)
-                            onChange(v);
-                        this._updateVisibility();
-                    } });
-                return el;
-            };
-            this._partSelect = sel(CARROT_GEN_PARTS.map(p => p[1]), "part");
-            this._styleSelect = sel(styleKeys.map(k => CARROT_GEN_STYLES[k].name), "style");
-            this._barsSelect = sel(["1 bar", "2 bars", "4 bars", "8 bars"], "bars");
-            this._formSelect = sel(formKeys, "form");
-            this._sourceSelect = sel(["My 4 notes", "Ideas in my song", "Both"], "source");
+            s.style = Math.max(0, Math.min(styleKeys.length - 1, s.style));
+            s.bars = Math.max(0, Math.min(CARROT_GEN_BARS.length - 1, s.bars));
+            s.progression = Math.max(0, Math.min(CARROT_GEN_PROGRESSIONS.length + 1, s.progression));
+            const sel = (label, options, key, title = "") => CarrotUI.select({ label, title, options, value: s[key], onChange: (v) => {
+                    s[key] = v;
+                    this._save();
+                    this._updateVisibility();
+                } });
+            const tog = (label, key, title = "") => CarrotUI.toggle({ label, title, value: s[key], onChange: (v) => {
+                    s[key] = v;
+                    if (key == "lockRhythm" && v) {
+                        s.lockNotes = false;
+                        this._lockNotes.setValue(false);
+                    }
+                    if (key == "lockNotes" && v) {
+                        s.lockRhythm = false;
+                        this._lockRhythm.setValue(false);
+                    }
+                    this._save();
+                } });
+            this._partSelect = sel("Make a", CARROT_GEN_PARTS.map(p => p[1]), "part");
+            this._styleSelect = sel("Style", styleKeys.map(k => CARROT_GEN_STYLES[k].name), "style");
+            this._barsSelect = sel("Length", CARROT_GEN_BARS.map(n => n + (n == 1 ? " bar" : " bars")), "bars");
+            this._formSelect = sel("Form", formKeys, "form", "How the bars repeat: A' is A with a new ending");
+            this._sourceSelect = sel("Start from", ["My 4 notes", "Ideas in my song", "Both"], "source");
+            this._progressionSelect = sel("Chords", this._progressionLabels(), "progression", "Auto follows the chords already in your song and uses the style's progression elsewhere");
+            this._chordEverySelect = sel("Chord every", ["Bar", "2 bars", "Half bar"], "chordEvery");
+            this._notesSelect = sel("Notes", ["Full scale", "Pentatonic", "Chord tones only"], "notes");
+            this._contourSelect = sel("Contour", ["Auto", "Arch", "Rising", "Falling", "Wave", "Valley"], "contour", "The overall shape of each 4-bar phrase");
+            this._harmonySelect = sel("Harmony", CARROT_GEN_HARMONY, "harmony");
+            this._swingSelect = sel("Swing", ["Style", "Straight", "Light", "Medium", "Heavy (triplet)"], "swing");
+            this._registerSelect = sel("Register", ["Auto", "Low", "Middle", "High"], "register");
+            this._targetSelect = sel("Write into", ["Current channel", "New channel"], "target");
+            this._followKick = tog("Follow the kick", "followKick", "Put bass notes on the kicks of your drum channel");
+            this._lockRhythm = tog("Keep rhythm", "lockRhythm", "Generate keeps the last idea's rhythm and finds new notes for it");
+            this._lockNotes = tog("Keep notes", "lockNotes", "Generate keeps the last idea's notes and gives them a new rhythm");
+            this._playToggle = tog("Play afterwards", "play");
+            this._loopToggle = tog("Loop the idea", "loop", "Set the song's loop to the generated bars");
             // Seed notes.
             this._seedSelects = [];
             const seedRow = HTML.div({ class: "cb-row" });
@@ -678,42 +747,78 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
                 this._seedSelects.push(select);
                 seedRow.appendChild(HTML.div({ class: "carrot-seed" }, HTML.span({ class: "cb-hint" }, "Note " + (i + 1)), select));
             }
-            seedRow.appendChild(HTML.div({ class: "carrot-seed" }, HTML.span({ class: "cb-hint" }, " "), HTML.div({ style: "display: flex; gap: 4px;" }, CarrotUI.button("From pattern", () => this._seedsFromPattern(), { title: "Use the first 4 notes of the current pattern" }), CarrotUI.button("Play", () => this._playSeeds(), { title: "Hear the seed notes" }), CarrotUI.button("✕", () => this._setSeeds([]), { title: "Clear" }))));
+            seedRow.appendChild(HTML.div({ class: "carrot-seed" }, HTML.span({ class: "cb-hint" }, " "), HTML.div({ style: "display: flex; gap: 6px;" }, CarrotUI.button("From pattern", () => this._seedsFromPattern(), { title: "Use the first 4 notes of the current pattern" }), CarrotUI.button("Play", () => this._playSeeds(), { title: "Hear the seed notes" }), CarrotUI.button("Clear", () => this._setSeeds([]), { title: "No seed notes" }))));
             this._fillSeedOptions();
             this._setSeeds(this._defaultSeeds());
             this._seedSection = CarrotUI.section("Your 4 notes (the idea starts from these)", seedRow);
             // Knobs.
-            const local = new CarrotLocalHost(editor, s, null);
-            const density = local.knob("density", { label: "Density", min: 0, max: 1, def: 0.5, format: CARROT_PERCENT });
-            const complexity = local.knob("complexity", { label: "Complexity", min: 0, max: 1, def: 0.4, format: CARROT_PERCENT, title: "More leaps, syncopation and variation" });
-            this._registerSelect = sel(["Auto", "Low", "Middle", "High"], "register");
-            this._targetSelect = sel(["Current channel", "New channel"], "target");
-            this._barInput = HTML.input({ type: "number", min: "1", max: String(Config.barCountMax), value: String(doc.bar + 1), style: "width: 56px; height: 22px;" });
+            const local = new CarrotLocalHost(editor, s, () => this._save());
+            const density = local.knob("density", { label: "Density", min: 0, max: 1, def: 0.5, format: CARROT_PERCENT, title: "How many notes" });
+            const complexity = local.knob("complexity", { label: "Complexity", min: 0, max: 1, def: 0.4, format: CARROT_PERCENT, title: "More leaps, syncopation, ghost notes, fills and variation" });
+            this._barInput = HTML.input({ type: "number", min: "1", max: String(Config.barCountMax), value: String(doc.bar + 1), style: "width: 60px;" });
             this._barInput.addEventListener("keydown", (event) => event.stopPropagation());
             this._barTouched = false;
             this._barInput.addEventListener("input", () => { this._barTouched = true; });
-            this._playToggle = CarrotUI.toggle({ label: "Play afterwards", value: s.play, onChange: (v) => { s.play = v; } });
-            this._preview = CarrotUI.canvas(110);
-            this._statusText = HTML.div({ class: "cb-hint", style: "min-height: 16px;" }, "Pick what to make, then press Generate. Every press gives a new idea (Z undoes).");
-            const generate = CarrotUI.button("Generate", () => this._generate(true), { primary: true, title: "A brand new idea" });
-            const vary = CarrotUI.button("Variation", () => this._generate(false, true), { title: "A close variation of the last idea" });
-            const next = CarrotUI.button("Next bars", () => {
-                const start = (parseInt(this._barInput.value) || 1) + this._barCount();
-                this._barInput.value = String(Math.min(Config.barCountMax, start));
-                this._barTouched = true;
-                this._generate(true);
-            }, { title: "Generate the following bars too" });
-            this.setBody(HTML.div(HTML.div({ class: "cb-row", style: "margin-bottom: 6px;" }, field("Make a", this._partSelect), field("Style", this._styleSelect), field("Length", this._barsSelect), this._formField = field("Form", this._formSelect), field("Start from", this._sourceSelect)), this._seedSection, CarrotUI.section("Shape", HTML.div({ class: "cb-row cb-center" }, density, complexity, field("Register", this._registerSelect), field("Write into", this._targetSelect), field("Bar", this._barInput), this._playToggle)), this._preview, HTML.div({ class: "cb-row cb-center", style: "margin-top: 6px; justify-content: space-between;" }, this._statusText, HTML.div({ style: "display: flex; gap: 6px;" }, vary, next, generate))));
+            this._refLabel = HTML.div({ class: "cb-hint" });
+            this._chordChips = HTML.div({ class: "carrot-gen-chords" });
+            this._preview = CarrotUI.canvas(120);
+            this._statusText = HTML.div({ class: "cb-hint carrot-gen-status" }, "Pick what to make, then press Generate (or Enter). Every press gives a new idea; Z undoes.");
+            this._historyLabel = HTML.span({ class: "cb-hint", style: "min-width: 52px; text-align: center;" }, "");
+            this._backButton = CarrotUI.button("<", () => this._stepHistory(-1), { title: "Previous idea" });
+            this._forwardButton = CarrotUI.button(">", () => this._stepHistory(1), { title: "Next idea" });
+            const generate = CarrotUI.button("Generate", () => this._generate("new"), { primary: true, title: "A brand new idea (Enter)" });
+            const vary = CarrotUI.button("Variation", () => this._generate("variation"), { title: "The same idea with a few notes changed (same chords)" });
+            const next = CarrotUI.button("Continue", () => this._generate("continue"), { title: "Write the next bars of this idea" });
+            const field = (label, control) => HTML.label({ class: "cb-field" }, label, control);
+            this.setBody(HTML.div({ class: "carrot-gen" },
+                HTML.div({ class: "cb-row carrot-gen-top" }, this._partSelect, this._styleSelect, this._barsSelect, this._formSelect, this._sourceSelect),
+                this._seedSection,
+                CarrotUI.section("Harmony", HTML.div({ class: "cb-row" }, this._progressionSelect, this._chordEverySelect, this._notesSelect, this._contourSelect, this._harmonySelect, this._followKick), this._refLabel),
+                CarrotUI.section("Feel", HTML.div({ class: "cb-row cb-center" }, density, complexity, this._swingSelect, this._registerSelect)),
+                CarrotUI.section("Output", HTML.div({ class: "cb-row cb-center" }, this._targetSelect, field("Bar", this._barInput), this._playToggle, this._loopToggle, this._lockRhythm, this._lockNotes)),
+                this._chordChips, this._preview,
+                HTML.div({ class: "carrot-gen-footer" }, this._statusText, HTML.div({ class: "carrot-gen-buttons" }, this._backButton, this._historyLabel, this._forwardButton, vary, next, generate))));
+            this.container.addEventListener("keydown", (event) => {
+                if (event.key == "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey && !/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(event.target.tagName)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this._generate("new");
+                }
+            }, true);
+            this._songKey = doc.song.key + ":" + doc.song.scale;
             this.watchSong(() => {
                 if (!this._barTouched && !this._writing)
                     this._barInput.value = String(this._doc.bar + 1);
+                const key = this._doc.song.key + ":" + this._doc.song.scale;
+                if (key != this._songKey) {
+                    this._songKey = key;
+                    const labels = this._progressionLabels();
+                    const menu = this._progressionSelect.menu;
+                    for (let i = 0; i < menu.options.length && i < labels.length; i++)
+                        menu.options[i].textContent = labels[i];
+                    this._fillSeedOptions();
+                }
+                this._updateRefLabel();
             });
             this._updateVisibility();
             this.mount();
             this._drawPreview(null);
+            this._updateHistoryButtons();
+        }
+        _save() {
+            try {
+                window.localStorage.setItem("carrotGenerator", JSON.stringify(this._state));
+            }
+            catch (error) { }
+        }
+        _progressionLabels() {
+            return ["Auto (follow my song)", "Style progression"].concat(CARROT_GEN_PROGRESSIONS.map(p => CarrotIdeaGen.progressionLabel(this._doc.song, p)));
+        }
+        _part() {
+            return CARROT_GEN_PARTS[this._state.part][0];
         }
         _barCount() {
-            return [1, 2, 4, 8][this._state.bars];
+            return CARROT_GEN_BARS[this._state.bars];
         }
         _pitchLabel(pitch) {
             return flMidiName(Config.keys[this._doc.song.key].basePitch + pitch);
@@ -722,11 +827,11 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
             for (const select of this._seedSelects) {
                 const value = select.value;
                 select.innerHTML = "";
-                select.appendChild(HTML.option({ value: "-1" }, "—"));
+                select.appendChild(HTML.option({ value: "-1" }, "-"));
                 const scale = Config.scales[this._doc.song.scale].flags;
                 for (let p = 24; p <= 72; p++) {
                     const inScale = scale[p % 12];
-                    select.appendChild(HTML.option({ value: String(p) }, this._pitchLabel(p) + (inScale ? "" : " ·")));
+                    select.appendChild(HTML.option({ value: String(p) }, this._pitchLabel(p) + (inScale ? "" : " (off scale)")));
                 }
                 select.value = value || "-1";
             }
@@ -752,8 +857,8 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
         }
         _seedsFromPattern() {
             const pattern = this._doc.getCurrentPattern();
-            if (!pattern || pattern.notes.length == 0) {
-                flToast("This pattern is empty — draw a few notes or pick them here.");
+            if (!pattern || pattern.notes.length == 0 || this._doc.song.getChannelIsNoise(this._doc.channel)) {
+                flToast("This pattern has no notes to start from. Draw a few notes or pick them here.");
                 return;
             }
             this._setSeeds(this._patternSeeds(pattern));
@@ -769,31 +874,66 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
             seeds.forEach((pitch, i) => setTimeout(() => this._doc.performance.setTemporaryPitches([pitch], Config.partsPerBeat / 2), i * 260));
         }
         _updateVisibility() {
-            const part = CARROT_GEN_PARTS[this._state.part][0];
-            const melodic = part == "lead";
-            this._seedSection.style.display = (melodic && this._state.source != 1) ? "" : "none";
-            this._formField.style.display = (part == "lead" || part == "counter") ? "" : "none";
-            this._sourceSelect.parentElement.style.display = (part == "drums") ? "none" : "";
+            const part = this._part();
+            const s = this._state;
+            const melodic = part == "lead" || part == "hook" || part == "counter" || part == "full";
+            const show = (el, on) => { el.style.display = on ? "" : "none"; };
+            show(this._seedSection, (part == "lead" || part == "hook" || part == "full") && s.source != 1);
+            show(this._formSelect, part == "lead" || part == "counter" || part == "full");
+            show(this._sourceSelect, part != "drums" && part != "perc" && part != "harmony");
+            show(this._notesSelect, melodic);
+            show(this._contourSelect, melodic);
+            show(this._harmonySelect, part == "harmony");
+            show(this._followKick, part == "bass" || part == "full");
+            show(this._progressionSelect, part != "drums" && part != "perc");
+            show(this._chordEverySelect, part != "drums" && part != "perc" && part != "harmony");
+            show(this._lockRhythm, melodic);
+            show(this._lockNotes, melodic);
+            show(this._targetSelect, part != "full");
+            this._updateRefLabel();
+        }
+        _updateRefLabel() {
+            const part = this._part();
+            if (part != "counter" && part != "harmony") {
+                this._refLabel.style.display = "none";
+                return;
+            }
+            const ref = this._referenceChannel();
+            this._refLabel.style.display = "";
+            this._refLabel.textContent = ref == null ? "Select the channel with your lead melody: the " + (part == "harmony" ? "harmony" : "counter-melody") + " follows it." : "Follows channel " + (ref + 1) + (this._doc.song.channels[ref].name ? " (" + this._doc.song.channels[ref].name + ")" : "") + ". Select another channel to follow that one.";
+        }
+        // The lead that counter-melodies and harmonies follow: the selected
+        // channel, unless it is one this window wrote a counter / harmony into.
+        _referenceChannel() {
+            const doc = this._doc;
+            const song = doc.song;
+            const hasNotes = (c) => {
+                const start = this._startBar();
+                for (let b = start; b < Math.min(song.barCount, start + this._barCount()); b++) {
+                    const p = song.getPattern(c, b);
+                    if (p && p.notes.length > 0)
+                        return true;
+                }
+                return false;
+            };
+            const followers = this._followers || (this._followers = new Set());
+            if (!song.getChannelIsNoise(doc.channel) && !followers.has(doc.channel) && hasNotes(doc.channel))
+                this._ref = doc.channel;
+            if (this._ref != null && (this._ref >= song.pitchChannelCount || followers.has(this._ref)))
+                this._ref = null;
+            return this._ref != null ? this._ref : null;
         }
         // Picks (or makes) the channel to write into.
-        _targetChannel(part) {
+        _targetChannel(part, forceNew = false) {
             const doc = this._doc;
-            const wantsNoise = part == "drums";
+            const wantsNoise = part == "drums" || part == "perc";
             let channel = doc.channel;
-            if (this._state.target == 1 || doc.song.getChannelIsNoise(channel) != wantsNoise) {
-                if (this._lastChannel != null && this._lastChannel < doc.song.getChannelCount() && doc.song.getChannelIsNoise(this._lastChannel) == wantsNoise && this._lastPart == part) {
+            if (this._state.target == 1 || forceNew || doc.song.getChannelIsNoise(channel) != wantsNoise) {
+                if (this._lastChannel != null && this._lastChannel < doc.song.getChannelCount() && doc.song.getChannelIsNoise(this._lastChannel) == wantsNoise && this._lastPart == part && this._lastChannel != this._ref) {
                     channel = this._lastChannel;
                 }
-                else if (this._state.target == 1 || !wantsNoise || doc.song.noiseChannelCount == 0) {
-                    const added = carrotNewChannel(doc, wantsNoise);
-                    if (!added) {
-                        flToast("No room for another channel.");
-                        return null;
-                    }
-                    doc.record(added.group);
-                    channel = added.index;
-                    const label = CARROT_GEN_PARTS.find(p => p[0] == part)[1];
-                    doc.record(new ChangeFL(doc, () => { doc.song.channels[channel].name = label; }, false));
+                else if (this._state.target == 1 || forceNew || !wantsNoise || doc.song.noiseChannelCount == 0) {
+                    channel = this._newChannel(part, wantsNoise);
                 }
                 else {
                     channel = doc.song.pitchChannelCount;
@@ -801,50 +941,273 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
             }
             return channel;
         }
-        _generate(newIdea, variation = false) {
+        _newChannel(part, isNoise) {
+            const doc = this._doc;
+            const added = carrotNewChannel(doc, isNoise);
+            if (!added) {
+                flToast("No room for another channel.");
+                return null;
+            }
+            doc.record(added.group);
+            const channel = added.index;
+            // A new pitched channel goes before the drum channels: move the
+            // channel numbers this window remembers.
+            if (!isNoise)
+                this._shiftChannels(channel);
+            const label = (CARROT_GEN_PARTS.find(p => p[0] == part) || [part, part])[1].replace(/ \(.*\)$/, "");
+            doc.record(new ChangeFL(doc, () => { doc.song.channels[channel].name = label; }, false));
+            return channel;
+        }
+        _shiftChannels(from) {
+            const shift = (c) => c != null && c >= from ? c + 1 : c;
+            if (this._followers)
+                this._followers = new Set(Array.from(this._followers).map(shift));
+            this._lastChannel = shift(this._lastChannel);
+            this._ref = shift(this._ref);
+            for (const key in this._fullChannels)
+                this._fullChannels[key] = shift(this._fullChannels[key]);
+            const ideas = this._history.slice();
+            if (this._pending)
+                ideas.push(this._pending);
+            for (const idea of ideas)
+                for (const t of idea.tracks)
+                    t.channel = shift(t.channel);
+        }
+        _options(part, extra = {}) {
+            const s = this._state;
+            const doc = this._doc;
+            const registers = { lead: [null, 40, 50, 62], hook: [null, 40, 50, 62], counter: [null, 34, 44, 54], bass: [null, 22, 28, 36], arp: [null, 42, 52, 64], chords: [null, 42, 50, 60] };
+            return Object.assign({
+                song: doc.song, part, bars: this._barCount(),
+                style: Object.keys(CARROT_GEN_STYLES)[s.style], density: s.density, complexity: s.complexity,
+                center: (registers[part] || [null, null, null, null])[s.register], form: Object.keys(CARROT_GEN_FORMS)[s.form],
+                seeds: (s.source != 1 && (part == "lead" || part == "hook")) ? this._getSeeds() : [], learn: s.source != 0 || part == "counter" || part == "harmony",
+                progression: s.progression == 0 ? null : s.progression == 1 ? "style" : CARROT_GEN_PROGRESSIONS[s.progression - 2],
+                chordEvery: s.chordEvery, notes: s.notes, contour: CARROT_GEN_CONTOURS[s.contour], swing: CARROT_GEN_SWING[s.swing],
+                harmony: s.harmony, followKick: s.followKick,
+            }, extra);
+        }
+        _startBar() {
+            const doc = this._doc;
+            return Math.max(0, Math.min(Config.barCountMax - 1, (parseInt(this._barInput.value) || (doc.bar + 1)) - 1));
+        }
+        _generate(kind) {
             const doc = this._doc;
             const s = this._state;
-            const part = CARROT_GEN_PARTS[s.part][0];
-            if (newIdea)
-                this._seed = Math.floor(Math.random() * 1000000);
-            else if (variation)
-                this._seed = (this._seed + 1) % 1000000;
-            const channel = this._targetChannel(part);
-            if (channel == null)
-                return;
-            const startBar = Math.max(0, Math.min(Config.barCountMax - 1, (parseInt(this._barInput.value) || (doc.bar + 1)) - 1));
-            const seeds = (s.source != 1 && part == "lead") ? this._getSeeds() : [];
-            const result = CarrotIdeaGen.generate({
-                song: doc.song, channel, startBar, bars: this._barCount(), part,
-                style: Object.keys(CARROT_GEN_STYLES)[s.style], density: s.density, complexity: s.complexity,
-                center: [null, 36, 48, 60][s.register], form: Object.keys(CARROT_GEN_FORMS)[s.form],
-                seeds, learn: s.source != 0, seed: this._seed,
-            });
-            if (!result.bars || result.bars.length == 0) {
-                this._statusText.textContent = result.description || "Couldn't make anything here.";
-                carrotUISound("error");
-                return;
+            const last = this._last;
+            if ((kind == "variation" || kind == "continue") && !last) {
+                kind = "new";
             }
-            this._writing = true;
-            carrotWriteNotes(doc, result.bars, { channel, startBar, replace: true, freshPatterns: true });
-            this._writing = false;
-            this._lastChannel = channel;
-            this._lastPart = part;
-            this._statusText.textContent = result.description + " → bars " + (startBar + 1) + "–" + (startBar + result.bars.length) + " (Z to undo)";
-            this._drawPreview(result);
+            let idea;
+            if (kind == "new") {
+                const part = this._part();
+                this._seed = Math.floor(Math.random() * 1000000);
+                idea = { part, seed: this._seed, startBar: this._startBar(), bars: this._barCount(), tracks: [] };
+                const parts = part == "full" ? ["chords", "drums", "bass", "lead"] : [part];
+                let degrees = null;
+                this._pending = idea;
+                if (part == "full") {
+                    // Make the channels first (pitched ones before the drums).
+                    for (const p of ["chords", "bass", "lead", "drums"])
+                        if (this._fullChannel(p) == null) {
+                            this._pending = null;
+                            return;
+                        }
+                }
+                for (const p of parts) {
+                    let channel;
+                    if (part == "full")
+                        channel = this._fullChannels[p];
+                    else if (p == "harmony" || p == "counter") {
+                        const ref = this._referenceChannel();
+                        channel = this._targetChannel(p, ref != null && ref == doc.channel);
+                        if (channel != null)
+                            (this._followers || (this._followers = new Set())).add(channel);
+                    }
+                    else
+                        channel = this._targetChannel(p);
+                    if (channel == null) {
+                        this._pending = null;
+                        return;
+                    }
+                    const extra = { channel, startBar: idea.startBar, seed: this._seed, refChannel: this._ref };
+                    if (degrees) {
+                        extra.fixedChords = degrees;
+                        extra.scale = idea.scale;
+                    }
+                    const melodic = p == "lead" || p == "hook" || p == "counter";
+                    const prevTrack = last && last.tracks.find(t => t.part == p);
+                    if (melodic && prevTrack && prevTrack.result.straight && prevTrack.result.bars.length == idea.bars) {
+                        if (s.lockRhythm)
+                            extra.keepRhythmOf = prevTrack.result.straight;
+                        else if (s.lockNotes)
+                            extra.keepNotesOf = prevTrack.result.straight;
+                    }
+                    const options = this._options(p, extra);
+                    const result = CarrotIdeaGen.generate(options);
+                    if (!result.bars || result.bars.length == 0) {
+                        this._statusText.textContent = result.description || "Couldn't make anything here.";
+                        carrotUISound("error");
+                        this._pending = null;
+                        return;
+                    }
+                    if (!degrees) {
+                        const first = CarrotIdeaGen.context(options);
+                        degrees = first.chords;
+                        idea.scale = first.scale;
+                    }
+                    delete options.keepRhythmOf;
+                    delete options.keepNotesOf;
+                    idea.tracks.push({ part: p, channel, options, result, chain: idea.bars });
+                }
+                this._pending = null;
+            }
+            else if (kind == "variation") {
+                idea = { part: last.part, seed: Math.floor(Math.random() * 1000000), startBar: last.startBar, bars: last.bars, tracks: [] };
+                for (const t of last.tracks) {
+                    const melodic = t.part == "lead" || t.part == "hook" || t.part == "counter" || t.part == "drums" || t.part == "perc";
+                    const before = CarrotIdeaGen.context(Object.assign({}, t.options, { bars: t.chain }));
+                    const options = Object.assign({}, t.options, { bars: t.chain, seed: idea.seed, fixedChords: before.chords, scale: before.scale });
+                    if (melodic)
+                        options.variationOf = t.result.straight;
+                    const result = CarrotIdeaGen.generate(options);
+                    delete options.variationOf;
+                    if (result.bars.length == 0)
+                        continue;
+                    idea.tracks.push({ part: t.part, channel: t.channel, options: Object.assign({}, t.options, { seed: idea.seed }), result, chain: t.chain, varied: melodic });
+                }
+            }
+            else {
+                // Continue: the same idea, longer; only the new bars are written.
+                const add = this._barCount();
+                idea = { part: last.part, seed: last.seed, startBar: last.startBar, bars: last.bars + add, tracks: [], from: last.bars };
+                for (const t of last.tracks) {
+                    const options = Object.assign({}, t.options, { bars: t.chain + add });
+                    const result = CarrotIdeaGen.generate(options);
+                    if (result.bars.length == 0)
+                        continue;
+                    // Keep the bars already written (they may be variations).
+                    result.bars = t.result.bars.concat(result.bars.slice(t.chain));
+                    result.straight = (t.result.straight || t.result.bars).concat((result.straight || result.bars).slice(t.chain));
+                    idea.tracks.push({ part: t.part, channel: t.channel, options, result, chain: t.chain + add });
+                }
+            }
+            if (idea.tracks.length == 0)
+                return;
+            this._write(idea, kind == "continue" ? idea.from : 0);
+            this._pushHistory(idea);
+            const first = idea.tracks[idea.tracks.length - 1];
+            const desc = idea.part == "full" ? "Full beat, " + CARROT_GEN_STYLES[first.options.style].name + " (" + idea.tracks.map(t => t.part).join(", ") + ")" : first.result.description;
+            const range = "bars " + (idea.startBar + 1 + (kind == "continue" ? idea.from : 0)) + "-" + (idea.startBar + idea.bars);
+            this._statusText.textContent = (kind == "variation" ? "Variation: " : kind == "continue" ? "Continued: " : "") + desc + ", " + range + " (Z to undo)";
             carrotUISound("generate");
-            if (s.play) {
-                doc.synth.goToBar(startBar);
+        }
+        _fullChannel(part) {
+            const doc = this._doc;
+            const wantsNoise = part == "drums";
+            const known = this._fullChannels[part];
+            if (known != null && known < doc.song.getChannelCount() && doc.song.getChannelIsNoise(known) == wantsNoise)
+                return known;
+            const channel = this._newChannel(part, wantsNoise);
+            if (channel == null)
+                return null;
+            this._fullChannels[part] = channel;
+            // Give the new channel a sound that suits the style.
+            const style = Object.keys(CARROT_GEN_STYLES)[this._state.style];
+            try {
+                doc.selection.setChannelBar ? doc.selection.setChannelBar(channel, doc.bar) : doc.record(new ChangeChannelBar(doc, channel, doc.bar));
+                if (wantsNoise) {
+                    const names = FLSoundFactory.getKits().map(k => k.name);
+                    const kit = (CARROT_GEN_KITS[style] || []).find(n => names.indexOf(n) != -1);
+                    if (kit)
+                        FLActions.loadBuiltinKit(doc, kit);
+                }
+                else {
+                    const sounds = CARROT_GEN_SOUNDS[style] || CARROT_GEN_SOUNDS.pop;
+                    const name = sounds[["bass", "chords", "lead"].indexOf(part)];
+                    const value = name ? EditorConfig.nameToPresetValue(name) : null;
+                    if (value != null)
+                        doc.record(new ChangePreset(doc, value));
+                }
+            }
+            catch (error) {
+                console.warn("CarrotBox generator: could not set the instrument", error);
+            }
+            return channel;
+        }
+        _write(idea, fromBar) {
+            const doc = this._doc;
+            this._writing = true;
+            try {
+                for (const t of idea.tracks) {
+                    if (t.channel == null || t.channel >= doc.song.getChannelCount())
+                        continue;
+                    if (doc.song.getChannelIsNoise(t.channel) != (t.part == "drums" || t.part == "perc"))
+                        continue;
+                    t.options.channel = t.channel;
+                    const bars = t.result.bars.slice(fromBar);
+                    carrotWriteNotes(doc, bars, { channel: t.channel, startBar: idea.startBar + fromBar, replace: true, freshPatterns: true });
+                    this._lastChannel = t.channel;
+                    this._lastPart = t.part;
+                }
+                if (this._state.loop) {
+                    const length = Math.min(idea.bars, doc.song.barCount - idea.startBar);
+                    if (length > 0 && (doc.song.loopStart != idea.startBar || doc.song.loopLength != length))
+                        doc.record(new ChangeLoop(doc, doc.song.loopStart, doc.song.loopLength, idea.startBar, length));
+                }
+            }
+            finally {
+                this._writing = false;
+            }
+            this._last = idea;
+            this._drawPreview(idea);
+            if (this._state.play) {
+                doc.synth.goToBar(idea.startBar + fromBar);
                 doc.synth.snapToBar();
                 if (!doc.synth.playing)
                     doc.performance.play();
             }
         }
-        _drawPreview(result) {
+        _pushHistory(idea) {
+            this._history = this._history.slice(0, this._historyIndex + 1);
+            this._history.push(idea);
+            if (this._history.length > 30)
+                this._history.shift();
+            this._historyIndex = this._history.length - 1;
+            this._updateHistoryButtons();
+        }
+        _stepHistory(delta) {
+            const index = this._historyIndex + delta;
+            if (index < 0 || index >= this._history.length)
+                return;
+            this._historyIndex = index;
+            const idea = this._history[index];
+            this._write(idea, 0);
+            this._statusText.textContent = "Idea " + (index + 1) + " of " + this._history.length + " written back (Z to undo).";
+            this._updateHistoryButtons();
+        }
+        _updateHistoryButtons() {
+            this._backButton.disabled = this._historyIndex <= 0;
+            this._forwardButton.disabled = this._historyIndex >= this._history.length - 1;
+            this._historyLabel.textContent = this._history.length > 0 ? (this._historyIndex + 1) + " / " + this._history.length : "";
+        }
+        _drawPreview(idea) {
+            // Chord names above the notes.
+            this._chordChips.innerHTML = "";
+            const track = idea ? (idea.tracks.find(t => t.part == "lead") || idea.tracks[idea.tracks.length - 1]) : null;
+            if (track && track.result.chords && track.part != "drums" && track.part != "perc") {
+                const total = idea.bars;
+                for (const c of track.result.chords) {
+                    if (c.bar >= total)
+                        break;
+                    this._chordChips.appendChild(HTML.span({ class: "carrot-gen-chord", title: c.roman }, c.name));
+                }
+            }
             const { ctx, w, h } = CarrotUI.ctx(this._preview);
-            ctx.fillStyle = "#0b0d12";
+            const css = getComputedStyle(this.container);
+            ctx.fillStyle = css.getPropertyValue("--cb-canvas-bg").trim() || "#0b0d12";
             ctx.fillRect(0, 0, w, h);
-            if (!result) {
+            if (!idea) {
                 ctx.fillStyle = "rgba(255,255,255,0.35)";
                 ctx.font = "12px sans-serif";
                 ctx.textAlign = "center";
@@ -852,39 +1215,53 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
                 return;
             }
             const barParts = this._doc.song.beatsPerBar * Config.partsPerBeat;
-            const total = barParts * result.bars.length;
-            let lo = 1e9, hi = -1e9;
-            for (const bar of result.bars)
-                for (const n of bar)
-                    for (const p of n.pitches) {
-                        lo = Math.min(lo, p);
-                        hi = Math.max(hi, p);
-                    }
-            lo -= 2;
-            hi += 2;
-            const rowH = Math.max(2, Math.min(10, (h - 6) / Math.max(1, hi - lo)));
+            const bars = idea.bars;
+            const total = barParts * bars;
             ctx.strokeStyle = "rgba(255,255,255,0.08)";
-            for (let b = 0; b <= result.bars.length; b++) {
+            for (let b = 0; b <= bars; b++) {
                 const x = b * barParts / total * w;
                 ctx.beginPath();
                 ctx.moveTo(x + 0.5, 0);
                 ctx.lineTo(x + 0.5, h);
                 ctx.stroke();
             }
-            const color = getComputedStyle(this.container).getPropertyValue("--cb-plugin-color").trim() || "#c792ea";
-            result.bars.forEach((bar, b) => {
-                for (const n of bar) {
-                    for (const p of n.pitches) {
-                        const x = (b * barParts + n.start) / total * w;
-                        const x2 = (b * barParts + n.end) / total * w;
-                        const y = h - 3 - (p - lo + 1) * rowH;
-                        ctx.fillStyle = color;
-                        ctx.globalAlpha = 0.45 + 0.55 * ((n.size == undefined ? 3 : n.size) / 3);
-                        ctx.fillRect(x + 1, y, Math.max(2, x2 - x - 2), Math.max(2, rowH - 1));
-                    }
+            const colors = { drums: "#ff8a65", perc: "#ffb74d", bass: "#4fc3f7", chords: "#81c784", arp: "#aed581", lead: css.getPropertyValue("--cb-plugin-color").trim() || "#c792ea", hook: "#f48fb1", counter: "#90caf9", harmony: "#ce93d8" };
+            const lanes = idea.tracks.length;
+            idea.tracks.forEach((t, lane) => {
+                const top = lane * h / lanes, height = h / lanes;
+                let lo = 1e9, hi = -1e9;
+                for (const bar of t.result.bars)
+                    for (const n of bar)
+                        for (const p of n.pitches) {
+                            lo = Math.min(lo, p);
+                            hi = Math.max(hi, p);
+                        }
+                if (lo > hi)
+                    return;
+                lo -= 1;
+                hi += 1;
+                const rowH = Math.max(1.5, Math.min(8, (height - 4) / Math.max(1, hi - lo)));
+                ctx.fillStyle = colors[t.part] || "#c792ea";
+                t.result.bars.forEach((bar, b) => {
+                    if (b >= bars)
+                        return;
+                    for (const n of bar)
+                        for (const p of n.pitches) {
+                            const x = (b * barParts + n.start) / total * w;
+                            const x2 = (b * barParts + n.end) / total * w;
+                            const y = top + height - 2 - (p - lo + 1) * rowH;
+                            ctx.globalAlpha = 0.45 + 0.55 * ((n.size == undefined ? 3 : n.size) / 3);
+                            ctx.fillRect(x + 1, y, Math.max(2, x2 - x - 2), Math.max(1.5, rowH - 1));
+                        }
+                });
+                ctx.globalAlpha = 1;
+                if (lanes > 1) {
+                    ctx.fillStyle = "rgba(255,255,255,0.45)";
+                    ctx.font = "10px sans-serif";
+                    ctx.textAlign = "left";
+                    ctx.fillText(t.part, 4, top + 11);
                 }
             });
-            ctx.globalAlpha = 1;
         }
     }
     // -------------------------------------------------------------- recorder
@@ -1491,7 +1868,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
         editor._carrotKitButton = flIconButton("--carrot-kit-symbol", "Drum kit / sound kit loader (K)");
         editor._carrotPluginButton = flIconButton("--carrot-plugin-symbol", "Plugins: launch (Tab) or manage");
         editor._carrotRecordButton = flIconButton("--carrot-mic-symbol", "Audio recorder with mixing effects");
-        editor._carrotGenButton = flIconButton("--carrot-spark-symbol", "Lead / melody generator (G)");
+        editor._carrotGenButton = flIconButton("--carrot-spark-symbol", "Melody / rhythm generator (G)");
         editor._carrotBar = HTML.div({ class: "fl-bar carrot-bar-2" }, editor._carrotKitButton, editor._carrotPluginButton, editor._carrotRecordButton, editor._carrotGenButton);
         editor._flBar.parentElement.insertBefore(editor._carrotBar, editor._flBar.nextSibling);
         editor._carrotKitButton.addEventListener("click", () => CarrotKitLoader.open(editor, 0));

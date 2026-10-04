@@ -1901,7 +1901,7 @@
             for (const b of builtins)
                 items.push(Object.assign({ group: "Built in", color: "#666", key: b.name }, b));
             const tools = [
-                { icon: "Gn", name: "Lead / Melody Generator", sub: "Make a catchy part from 4 notes or your song", badge: "Tool", run: () => carrotOpen(this._editor, "flLeadGen") },
+                { icon: "Gn", name: "Melody / Rhythm Generator", sub: "Leads, hooks, harmonies, bass, chords, drums or a full beat in 21 styles", badge: "Tool", run: () => carrotOpen(this._editor, "flLeadGen") },
                 { icon: "Kt", name: "Drum Kit / Sound Kit Loader", sub: "Load FL Studio kits, folders and zips", badge: "Tool", run: () => carrotOpen(this._editor, "flKits") },
                 { icon: "Rc", name: "Audio Recorder", sub: "Record vocals or instruments with mixing effects", badge: "Tool", run: () => carrotOpen(this._editor, "flRecorder") },
                 { icon: "Br", name: "Sound Browser", sub: "Samples, kits and packs (F8)", badge: "Tool", run: () => this._editor.flShowBrowser(true) },
@@ -2098,7 +2098,7 @@
             return carrotPluginApi._api;
         carrotPluginApi._api = {
             HTML, SVG, Config, FLConfig, CarrotDSP, CarrotADSR, CarrotSVF, CarrotBiquad, CarrotDelayLine, CarrotFX, CarrotUI,
-            CarrotWavetable, CarrotWavetableBank, FLSampleBank, FLSoundFactory, FLKitLibrary, FLLoops, flToast, flMidiName, flSetupCanvas, flCss, flResolve, flCloneJson,
+            CarrotWavetable, CarrotWavetableBank, FLSampleBank, FLSoundFactory, FLKitLibrary, FLLoops, CarrotIdeaGen, CARROT_GEN_STYLES, carrotWriteNotes, carrotNormalizeNotes, flToast, flMidiName, flSetupCanvas, flCss, flResolve, flCloneJson,
             carrotFxRack, carrotWriteNotes, carrotSongScale, carrotSyncOptions, carrotSyncBeats, carrotFormatValue, carrotToNorm, carrotFromNorm,
             CarrotWindows, CarrotPlugins, carrotNewChannel, carrotNameChannel,
             // song editing (for tools that write into the song)
@@ -2122,6 +2122,46 @@
     // parts (Config.partsPerBeat per beat). Writes into `channel` starting at
     // `startBar`, replacing what's there (options.replace) and making new
     // patterns where needed. Returns true if anything was written.
+    // BeepBox patterns hold one note at a time (a chord is one note with several
+    // pitches), sorted and never overlapping. Notes that start together become one
+    // chord; a note that is still sounding when the next one starts is cut there.
+    function carrotNormalizeNotes(notes, barLength, maxPitch) {
+        const list = [];
+        for (const n of notes || []) {
+            if (!n || !n.pitches)
+                continue;
+            const start = Math.max(0, Math.min(barLength - 1, Math.round(n.start)));
+            const end = Math.max(start + 1, Math.min(barLength, Math.round(n.end)));
+            const pitches = n.pitches.map(p => Math.max(0, Math.min(maxPitch, Math.round(p)))).filter(p => isFinite(p));
+            if (pitches.length == 0)
+                continue;
+            const size = n.size != undefined && isFinite(n.size) ? Math.max(0, Math.min(Config.noteSizeMax, Math.round(n.size))) : Config.noteSizeMax;
+            list.push({ start, end, pitches, size, pins: n.pins });
+        }
+        list.sort((a, b) => a.start - b.start || b.end - a.end);
+        const out = [];
+        for (const n of list) {
+            const last = out[out.length - 1];
+            if (last && last.start == n.start) {
+                for (const p of n.pitches)
+                    if (last.pitches.indexOf(p) == -1)
+                        last.pitches.push(p);
+                last.size = Math.max(last.size, n.size);
+                if (last.pitches.length > 1)
+                    last.pins = null;
+                continue;
+            }
+            if (last && last.end > n.start) {
+                last.end = n.start;
+                if (last.pins)
+                    last.pins = last.pins.filter(pin => pin.time <= last.end - last.start);
+            }
+            out.push({ start: n.start, end: n.end, pitches: n.pitches.slice(), size: n.size, pins: n.pins ? n.pins.slice() : null });
+        }
+        for (const n of out)
+            n.pitches = Array.from(new Set(n.pitches)).sort((a, b) => a - b).slice(0, Config.maxChordSize);
+        return out;
+    }
     function carrotWriteNotes(doc, bars, options = {}) {
         const song = doc.song;
         const channel = options.channel != undefined ? options.channel : doc.channel;
@@ -2131,6 +2171,12 @@
         const barLength = song.beatsPerBar * Config.partsPerBeat;
         const maxPitch = isNoise ? Config.drumCount - 1 : Config.maxPitch;
         const group = new ChangeGroup();
+        // Channels added a moment ago are not known to the document's
+        // per-channel state until it is next validated.
+        if (!doc.recentPatternInstruments[channel] && typeof doc._validateDocState == "function")
+            doc._validateDocState();
+        if (!doc.recentPatternInstruments[channel])
+            doc.recentPatternInstruments[channel] = [0];
         const needed = startBar + bars.length;
         if (needed > song.barCount) {
             if (needed > Config.barCountMax)
@@ -2159,14 +2205,25 @@
                 continue;
             if (replace && pattern.notes.length > 0)
                 group.append(new ChangeNoteTruncate(doc, pattern, 0, barLength));
-            for (const n of notes) {
-                const start = Math.max(0, Math.min(barLength - 1, Math.round(n.start)));
-                const end = Math.max(start + 1, Math.min(barLength, Math.round(n.end)));
-                const pitches = Array.from(new Set(n.pitches.map(p => Math.max(0, Math.min(maxPitch, Math.round(p)))))).slice(0, Config.maxChordSize).sort((a, b) => a - b);
-                if (pitches.length == 0)
-                    continue;
-                const note = new Note(pitches[0], start, end, n.size != undefined ? Math.max(0, Math.min(Config.noteSizeMax, n.size)) : Config.noteSizeMax, isNoise);
-                note.pitches = pitches;
+            for (const n of carrotNormalizeNotes(notes, barLength, maxPitch)) {
+                const note = new Note(n.pitches[0], n.start, n.end, n.size, isNoise);
+                note.pitches = n.pitches;
+                if (n.pins && n.pins.length >= 2) {
+                    // Pitch bends / volume shapes: times relative to the note start.
+                    const length = n.end - n.start;
+                    const pins = [];
+                    for (const pin of n.pins) {
+                        const time = Math.max(0, Math.min(length, Math.round(pin.time)));
+                        if (pins.length > 0 && time <= pins[pins.length - 1].time)
+                            continue;
+                        pins.push(makeNotePin(Math.round(pin.interval || 0), time, Math.max(0, Math.min(Config.noteSizeMax, pin.size != undefined ? Math.round(pin.size) : n.size))));
+                    }
+                    if (pins.length >= 2 && pins[0].time == 0) {
+                        if (pins[pins.length - 1].time != length)
+                            pins.push(makeNotePin(pins[pins.length - 1].interval, length, pins[pins.length - 1].size));
+                        note.pins = pins;
+                    }
+                }
                 group.append(new ChangeNoteAdded(doc, pattern, note, pattern.notes.length));
                 wrote = true;
             }

@@ -6,7 +6,8 @@
 // Checks that the editor starts without errors, that every plugin can be opened and closed
 // (X button, Esc, and Esc with focus in the window), that the instrument plugins make finite,
 // audible sound for every preset (Utawa included), that Live Loops and the sound library render,
-// that the FL Studio mode switches cleanly, and that Sampler, Slicex and FPC play on every key.
+// that the FL Studio mode switches cleanly, that the generator makes every part in every style
+// (and a full beat) without overlapping notes, and that Sampler, Slicex and FPC play on every key.
 const path = require("path");
 const serve = require(path.join(__dirname, "serve.js"));
 function loadPlaywright() {
@@ -145,6 +146,65 @@ function check(label, ok, detail) {
 		return { on, off: !document.documentElement.classList.contains("carrot-fl"), restored: editor.doc.prefs.colorTheme == before };
 	});
 	check("FL Studio mode switches on and off", fl.on && fl.off && fl.restored, JSON.stringify(fl));
+
+	// ---- melody / rhythm generator: every part in every style, then a full beat
+	const gen = await page.evaluate(() => {
+		const { CarrotIdeaGen, CARROT_GEN_STYLES } = beepbox.CarrotAPI;
+		const song = editor.doc.song;
+		const result = { runs: 0, empty: [], overlaps: 0, bad: 0 };
+		const parts = ["lead", "hook", "counter", "bass", "arp", "chords", "drums", "perc"];
+		const barLength = song.beatsPerBar * 24;
+		for (const style of Object.keys(CARROT_GEN_STYLES))
+			for (const part of parts) {
+				const channel = part == "drums" || part == "perc" ? song.pitchChannelCount : 0;
+				const r = CarrotIdeaGen.generate({ song, channel, startBar: 0, bars: 4, part, style, density: 0.6, complexity: 0.6, seed: 11, chordEvery: 2 });
+				result.runs++;
+				if (!r.bars || r.bars.length != 4 || r.bars.every(b => b.length == 0))
+					result.empty.push(style + "/" + part);
+				for (const bar of r.bars || []) {
+					const notes = beepbox.CarrotAPI.carrotNormalizeNotes(bar, barLength, 200);
+					for (const n of bar)
+						if (!(n.start >= 0 && n.end <= barLength && n.end > n.start) || n.pitches.some(p => !isFinite(p)))
+							result.bad++;
+					for (let i = 1; i < notes.length; i++)
+						if (notes[i].start < notes[i - 1].end)
+							result.overlaps++;
+				}
+			}
+		return result;
+	});
+	check("generator makes every part in every style", gen.empty.length == 0 && gen.bad == 0 && gen.overlaps == 0, JSON.stringify(gen));
+	await page.focus(".beepboxEditor");
+	await page.keyboard.press("g");
+	await page.waitForTimeout(300);
+	const full = await page.evaluate(() => {
+		const panel = [...document.querySelectorAll(".cb-window")].find(w => /Generator/.test(w.textContent));
+		if (!panel)
+			return { opened: false };
+		const make = [...panel.querySelectorAll("label.cb-field")].find(l => l.firstChild.textContent == "Make a").querySelector("select");
+		make.selectedIndex = make.options.length - 1;
+		make.dispatchEvent(new Event("change"));
+		const play = [...panel.querySelectorAll(".cb-toggle")].find(b => b.textContent == "Play afterwards");
+		if (play.classList.contains("cb-on"))
+			play.click();
+		const before = editor.doc.song.getChannelCount();
+		[...panel.querySelectorAll("button")].find(b => b.textContent == "Generate").click();
+		const after = editor.doc.song.getChannelCount();
+		let overlaps = 0;
+		const song = editor.doc.song;
+		for (let c = 0; c < song.getChannelCount(); c++)
+			for (let b = 0; b < song.barCount; b++) {
+				const p = song.getPattern(c, b);
+				if (p)
+					for (let i = 1; i < p.notes.length; i++)
+						if (p.notes[i].start < p.notes[i - 1].end)
+							overlaps++;
+			}
+		const status = panel.querySelector(".carrot-gen-status").textContent;
+		panel.querySelector(".cb-window-title button[title^='Close']").click();
+		return { opened: true, added: after - before, overlaps, status };
+	});
+	check("generator writes a full beat into new channels", full.opened && full.added == 4 && full.overlaps == 0 && /Full beat/.test(full.status), JSON.stringify(full));
 
 	// ---- sample instruments must sound on every key, not just some of them
 	const keys = await page.evaluate(async () => {

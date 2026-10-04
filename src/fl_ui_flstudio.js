@@ -550,7 +550,7 @@ html.carrot-fl .cfl-top {
                     items.push(["Live Loops", () => carrotOpenTool(editor, "liveloops")]);
                     items.push(["Bouncify", () => carrotOpenTool(editor, "bouncify")]);
                     items.push(["Sketchpad", () => carrotOpenTool(editor, "sketchpad")]);
-                    items.push(["Lead / melody generator", () => carrotOpen(editor, "flLeadGen"), "G"]);
+                    items.push(["Melody / rhythm generator", () => carrotOpen(editor, "flLeadGen"), "G"]);
                     items.push(["Drum kit / sound kit loader", () => carrotOpen(editor, "flKits"), "K"]);
                     items.push(["Audio recorder", () => carrotOpen(editor, "flRecorder")]);
                     items.push(["SP-404MKII / MIDI devices", () => CarrotHardwarePanel.open(editor)]);
