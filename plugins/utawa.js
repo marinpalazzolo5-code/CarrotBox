@@ -513,7 +513,7 @@
         const res = voice.res;
         const shift = Math.max(0.7, Math.min(1.5, p.formant));
         const tilt = 0.08 + 0.55 * Math.max(0, Math.min(1, p.tension)); // glottal low-pass amount
-        const level = 0.55 * p.volume * (1 - p.dynamics + p.dynamics * voice.velocity);
+        const level = 0.42 * p.volume * (1 - p.dynamics + p.dynamics * voice.velocity);
         const smoothF = 1 - Math.exp(-1 / (0.022 * sr));
         const smoothA = 1 - Math.exp(-1 / (0.006 * sr));
         const bws = [70, 95, 150, 230, 300];

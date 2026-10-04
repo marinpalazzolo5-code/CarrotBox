@@ -241,6 +241,12 @@
                 case "leadGen":
                     carrotOpen(editor, "flLeadGen");
                     return true;
+                case "bouncify":
+                    carrotOpenTool(editor, "bouncify");
+                    return true;
+                case "liveLoops":
+                    carrotOpenTool(editor, "liveloops");
+                    return true;
                 case "duplicateBar":
                     flCopyBarToNext(doc);
                     return true;

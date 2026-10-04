@@ -5,7 +5,8 @@
 //
 // Checks that the editor starts without errors, that every plugin can be opened and closed
 // (X button, Esc, and Esc with focus in the window), that the instrument plugins make finite,
-// audible sound for every preset, and that Sampler, Slicex and FPC play on every key.
+// audible sound for every preset (Utawa included), that Live Loops and the sound library render,
+// that the FL Studio mode switches cleanly, and that Sampler, Slicex and FPC play on every key.
 const path = require("path");
 const serve = require(path.join(__dirname, "serve.js"));
 function loadPlaywright() {
@@ -45,7 +46,7 @@ function check(label, ok, detail) {
 		await page.keyboard.press("Enter");
 		await page.waitForTimeout(500);
 	};
-	for (const query of ["swarm", "prism", "seedling", "chop", "sketch", "mangler"]) {
+	for (const query of ["swarm", "prism", "seedling", "chop", "sketch", "mangler", "utawa", "live loops", "bouncify", "sp-404"]) {
 		await launch(query);
 		const opened = await count();
 		await page.locator(".cb-window .cb-window-title button[title^='Close']").first().click();
@@ -78,7 +79,7 @@ function check(label, ok, detail) {
 		pattern.notes.length = 0;
 		for (let i = 0; i < 4; i++) pattern.notes.push(new beepbox.Note(12 + i * 3, i * ppb, i * ppb + ppb, 3, false));
 		const results = {};
-		for (const id of ["swarm", "prism", "seedling", "chopshop"]) {
+		for (const id of ["swarm", "prism", "seedling", "chopshop", "utawa"]) {
 			const plugin = beepbox.CarrotPlugins.get(id);
 			if (!plugin) { results[id] = "not registered"; continue; }
 			const presets = typeof plugin.presets == "function" ? plugin.presets() : (plugin.presets || []);
@@ -109,10 +110,41 @@ function check(label, ok, detail) {
 		}
 		return results;
 	});
-	for (const id of ["swarm", "prism", "seedling"]) {
+	for (const id of ["swarm", "prism", "seedling", "utawa"]) {
 		const r = audio[id];
 		check(id + " renders finite, audible sound for every preset", typeof r == "object" && r.nan == 0 && r.quiet == 0 && r.worstPeak < 4, JSON.stringify(r));
 	}
+
+	// ---- Live Loops: a sample of loops render at two tempos with exact lengths
+	const loops = await page.evaluate(() => {
+		const L = beepbox.FLLoops, lib = L.library();
+		let bad = 0, checked = 0;
+		for (let i = 0; i < lib.length; i += 37) {
+			for (const c of [{ bpm: 140, key: 0, minor: true, beats: 4 }, { bpm: 90, key: 7, minor: false, beats: 8 }]) {
+				const r = L.render(lib[i].id, c);
+				const expected = Math.floor(lib[i].bars * c.beats * 60 / c.bpm * 44100);
+				let peak = 0;
+				for (let k = 0; k < r.pcm.length; k += 3) peak = Math.max(peak, Math.abs(r.pcm[k]));
+				checked++;
+				if (Math.abs(r.pcm.length - expected) > 2 || !(peak > 0.1) || !(peak < 1.01)) bad++;
+			}
+		}
+		return { total: lib.length, checked, bad, sounds: beepbox.FLSoundFactory.getCatalog().length };
+	});
+	check("Live Loops library renders (" + loops.total + " loops)", loops.total >= 1200 && loops.bad == 0, JSON.stringify(loops));
+	check("sound library has over 2,600 sounds", loops.sounds >= 2600, String(loops.sounds));
+
+	// ---- FL Studio interface mode turns on and off cleanly
+	const fl = await page.evaluate(async () => {
+		const before = editor.doc.prefs.colorTheme;
+		beepbox.CarrotSettings.set("flStudioUI", true);
+		await new Promise(r => setTimeout(r, 100));
+		const on = document.documentElement.classList.contains("carrot-fl") && !!document.querySelector(".cfl-top");
+		beepbox.CarrotSettings.set("flStudioUI", false);
+		await new Promise(r => setTimeout(r, 100));
+		return { on, off: !document.documentElement.classList.contains("carrot-fl"), restored: editor.doc.prefs.colorTheme == before };
+	});
+	check("FL Studio mode switches on and off", fl.on && fl.off && fl.restored, JSON.stringify(fl));
 
 	// ---- sample instruments must sound on every key, not just some of them
 	const keys = await page.evaluate(async () => {

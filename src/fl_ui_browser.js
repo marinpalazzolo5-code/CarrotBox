@@ -5,6 +5,34 @@
     // (or the "Load" button, or drag) to load into the current instrument.
     // ======================================================================
     class FLSoundBrowser {
+        // ---- favorites (kept in this browser)
+        static favorites() {
+            try {
+                const list = JSON.parse(window.localStorage.getItem("carrotFavorites") || "[]");
+                return Array.isArray(list) ? list.filter(f => f && typeof f.id == "string") : [];
+            }
+            catch (error) {
+                return [];
+            }
+        }
+        static isFavorite(id) {
+            return FLSoundBrowser.favorites().some(f => f.id == id);
+        }
+        static toggleFavorite(payload) {
+            let list = FLSoundBrowser.favorites();
+            if (list.some(f => f.id == payload.id)) {
+                list = list.filter(f => f.id != payload.id);
+                flToast("Removed " + payload.name + " from Favorites", 1200);
+            }
+            else {
+                list.unshift({ id: payload.id, name: payload.name });
+                flToast("Added " + payload.name + " to Favorites", 1200);
+            }
+            try {
+                window.localStorage.setItem("carrotFavorites", JSON.stringify(list.slice(0, 500)));
+            }
+            catch (error) { }
+        }
         constructor(doc, editor) {
             this._doc = doc;
             this._editor = editor;
@@ -180,6 +208,11 @@
             if (recent.children.length > 0)
                 project.children.push(recent);
             roots.push(project);
+            // Favorites: sounds you starred
+            const favorites = { key: "favorites", name: "Favorites", type: "folder", children: [], empty: "Star a sound (the \u2606 next to Load) to keep it here." };
+            for (const fav of FLSoundBrowser.favorites())
+                favorites.children.push({ key: "fav:" + fav.id, name: fav.name, type: "sound", payload: { id: fav.id, name: fav.name } });
+            roots.push(favorites);
             // Built-in packs
             const packs = { key: "packs", name: "Packs (built-in)", type: "folder", children: [] };
             const folders = new Map();
@@ -306,6 +339,12 @@
                 element.appendChild(b);
             };
             if (row.type == "sound") {
+                const starred = FLSoundBrowser.isFavorite(row.payload.id);
+                addAction(starred ? "\u2605" : "\u2606", starred ? "Remove from Favorites" : "Add to Favorites", () => {
+                    FLSoundBrowser.toggleFavorite(row.payload);
+                    this._dirty = true;
+                    this.render();
+                });
                 addAction("Load", "Load into the current instrument (FPC: the selected pad)", () => FLActions.loadSample(this._doc, row.payload));
                 element.draggable = true;
                 element.addEventListener("dragstart", (event) => {

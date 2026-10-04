@@ -1,6 +1,6 @@
 # CarrotBox
 
-CarrotBox is a mod of [BeepBox](https://github.com/johnnesky/beepbox) (by John Nesky, MIT license). It keeps BeepBox's simple, fast way of writing music in the browser and adds a playlist view, samples and sound kits, FL Studio style effects, a plugin system with six plugins, a bigger set of color themes and a long list of small quality-of-life improvements.
+CarrotBox is a mod of [BeepBox](https://github.com/johnnesky/beepbox) (by John Nesky, MIT license). It keeps BeepBox's simple, fast way of writing music in the browser and adds a playlist view, samples and sound kits, a library of more than 2,600 built-in sounds, FL Studio style effects, an **FL Studio interface mode**, a plugin system with nine plugins (synths, a singing synthesizer, a loop launcher with 1,248 loops, a sample chopper and creative tools), **SP-404MKII / USB MIDI** support, a bigger set of color themes and a long list of small quality-of-life improvements.
 
 Everything you know from BeepBox still works, and old BeepBox song links still open.
 
@@ -13,9 +13,11 @@ CarrotBox runs entirely in the browser. There is no server, no account and nothi
 - [Quick start](#quick-start)
 - [What CarrotBox adds to BeepBox](#what-carrotbox-adds-to-beepbox)
 - [Views: grid and playlist](#views-grid-and-playlist)
+- [FL Studio mode](#fl-studio-mode)
 - [Writing notes](#writing-notes)
 - [Samples, Slicex, FPC and 3x Osc](#samples-slicex-fpc-and-3x-osc)
 - [The Sound Browser and kits](#the-sound-browser-and-kits)
+  - [The sound library](#the-sound-library)
 - [Effects and the master chain](#effects-and-the-master-chain)
 - [Plugins](#plugins)
   - [Using plugins](#using-plugins)
@@ -25,7 +27,11 @@ CarrotBox runs entirely in the browser. There is no server, no account and nothi
   - [Chop Shop](#chop-shop-sample-chopper)
   - [Sketchpad](#sketchpad-idea-sketcher)
   - [Mangler FX](#mangler-fx-effect-rack)
+  - [Utawa](#utawa-singing-synthesizer)
+  - [Live Loops](#live-loops-loop-launcher)
+  - [Bouncify](#bouncify-make-it-bouncy)
 - [Tools: generator, recorder, metronome](#tools-generator-recorder-metronome)
+- [SP-404MKII and other USB MIDI devices](#sp-404mkii-and-other-usb-midi-devices)
 - [Settings and preferences](#settings-and-preferences)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Saving, sharing and storage](#saving-sharing-and-storage)
@@ -46,10 +52,11 @@ CarrotBox runs entirely in the browser. There is no server, no account and nothi
 
 1. Start a static web server in the repository folder and open `index.html` (see [Running it](#running-it)). The editor loads in a second or two.
 2. Click the gray rows of the piano roll to add notes. Press `Space` to play.
-3. Press `Tab` to open the **plugin launcher**, type a few letters of a plugin's name and press `Enter`. All six plugins are installed by default.
+3. Press `Tab` to open the **plugin launcher**, type a few letters of a plugin's name and press `Enter`. All nine plugins are installed by default.
 4. Press `F8` to open the **Sound Browser**. Double-click a sound to load it into the current instrument.
 5. Press `F5` to switch between BeepBox's pattern grid and the **Playlist**.
 6. Press `?` at any time to see every keyboard shortcut. Press `Esc` to close the topmost window.
+7. Want it to feel like FL Studio? Turn on **Settings > Appearance > FL Studio interface**.
 
 Your work is stored in the page address (as in BeepBox). **File > Save Project + Samples** also saves any audio you imported.
 
@@ -62,9 +69,12 @@ Your work is stored in the page address (as in BeepBox). **File > Save Project +
 | Views | A second view, the **Playlist**, with one continuous timeline of clips that show their notes; zoom, track height, drag/copy/repeat clips, loop in the ruler. |
 | Editing | Single notes inside chords, overlapping notes, **ghost notes** from other channels, snap override with `Alt`, humanize and quantize, clear pattern, copy bar to next bar. |
 | Instruments | **Sampler**, **Slicex**, **FPC** (12 drum pads) and **3x Osc**, in addition to every BeepBox instrument. |
-| Sounds | A **Sound Browser** with hundreds of built-in generated sounds, plus your own kits (folders, files or `.zip`). |
+| Sounds | A **Sound Browser** with 2,680 built-in generated sounds (24 genre packs, 808s in every key, synth one-shots, chord stabs, FX, vocal chops, world percussion, foley), **Favorites**, plus your own kits (folders, files or `.zip`). |
+| Loops | **Live Loops**: a 16 x 16 loop launcher with 1,248 loops that are composed at your song's tempo and key, recordable into the song. |
+| Workspace | An **FL Studio interface mode**: full-window FL-style layout with a menu strip, hint bar, PAT / SONG, transport, LCD tempo, Channel Rack and Mixer. |
+| Hardware | **SP-404MKII** and other USB MIDI devices: pads, tempo sync both ways, sequencing the device from a channel, recording its audio and importing its samples. |
 | Effects | **Parametric EQ 2**, **Gross Beat** and **Soundgoodizer** on any instrument and on the master. |
-| Plugins | **Swarm**, **Prism**, **Seedling**, **Chop Shop**, **Sketchpad** and **Mangler FX** (all optional and installed on demand). |
+| Plugins | **Swarm**, **Prism**, **Seedling**, **Chop Shop**, **Utawa** (singing synth), **Sketchpad**, **Live Loops**, **Bouncify** and **Mangler FX** (all optional). |
 | Tools | Lead / melody **generator**, **audio recorder**, **metronome** with volume, 18 color themes, an optional modern skin, UI sounds, interface zoom. |
 | Saving | Song URLs remember everything except audio files; **Save Project + Samples** writes a `.json` that includes your samples; drop a file onto the page to open it; optional "warn before leaving". |
 | Polish | A settings panel that actually changes things, a shortcuts cheat sheet, toast messages, remembered window positions, user presets for plugins, recently used plugins, and much more (see [What was fixed](#what-was-fixed)). |
@@ -93,6 +103,25 @@ Use the **View** button or `F5` to switch.
 | Set the loop | Drag in the ruler |
 
 Clips draw a small preview of their notes, so you can see the shape of a song at a glance.
+
+---
+
+## FL Studio mode
+
+Turn on **Settings > Appearance > FL Studio interface** (or **OPTIONS** in the FL menu strip to turn it off again). CarrotBox switches to a full-window workspace that works and looks like FL Studio. Turning it off puts your previous theme, layout and view back.
+
+- **Top bar.** The menu strip (**FILE, EDIT, ADD, PATTERNS, VIEW, OPTIONS, TOOLS, HELP**) holds every BeepBox and CarrotBox command. Under it, the **hint bar** explains whatever control is under the mouse, as FL's does.
+- **PAT / SONG.** PAT loops the selected bar (pattern mode, sample-accurate), SONG plays the arrangement. `L` switches between them.
+- **Transport.** Play / pause, stop (back to the start of the loop or the pattern), record.
+- **LCDs.** The green tempo display (drag up / down to change, `Shift` for fine steps, double-click to type) and the song position as bar : beat : step.
+- **Snap and pattern picker.** The snap menu sets the rhythm grid. The pattern picker shows the pattern in the selected bar and steps through pattern numbers.
+- **Master volume, CPU and output meters.**
+- **Window buttons.** Playlist (`F5`), Piano roll (`F7`), Channel rack (`F6`), Mixer (`F9`), Browser (`F8`) and the plugin picker (`Tab`).
+- **Channel Rack** (`F6`). One row per channel: mute LED, volume and pan knobs, the channel name (click selects it, double-click opens its instrument), the note or drum row the steps play, and a step sequencer for the selected bar (16ths). Steps edit the bar's pattern directly and undo like everything else.
+- **Mixer** (`F9`). A Master strip (volume, master effects) and one strip per channel with a fader, pan, mute / solo and its effect switches (EQ, Gross Beat, Soundgoodizer and plugin effects).
+- **FL keys.** `F5` playlist, `F6` channel rack, `F7` piano roll, `F8` browser, `F9` mixer, `F10` settings, `F1` help, `L` pattern / song.
+
+The FL mode is a recreation of the workflow and the look. It uses no Image-Line artwork, and some FL windows (for example the graph editor or the step sequencer's per-step pitch lanes) have no equivalent.
 
 ---
 
@@ -154,6 +183,25 @@ Press `F8` (or `B`) to show or hide the browser. It lists:
 
 Use the search box to filter. Click a sound to select it (sounds preview as you select them), then press its **Load** button or double-click it to load it into the current instrument, or drag it onto an FPC pad or the instrument's waveform. Folders and kits have a **→ FPC** button that puts their sounds on the FPC pads. **File > Import FL Studio Packs Folder** reads a folder of samples that you own.
 
+**Favorites.** Press the **☆** next to a sound's Load button to star it; starred sounds are listed in the **Favorites** folder (kept in this browser).
+
+### The sound library
+
+All 2,680 built-in sounds are synthesized by CarrotBox when you first use them (deterministically, so a song always gets the same sound back), which is why the library adds almost nothing to the download. The **Packs** folder holds the 2,056 sounds added in this version:
+
+| Folder | Contents |
+| --- | --- |
+| **Packs / <genre>** (24 genres) | Trap, Drill, Boom Bap, Lo-Fi, R&B, Pop, House, Deep House, Tech House, Techno, Drum & Bass, Jungle, Dubstep, Future Bass, Phonk, Afrobeats, Amapiano, Reggaeton, Jersey Club, UK Garage, Synthwave, Hyperpop, Hardstyle, Disco & Funk. Each has kicks, snares, claps, hats, open hats, percussion, cymbals, bass (808s and synth basses), melodic one-shots, FX and vocal chops, tuned to that genre. |
+| **808s In Every Key** | Eight 808 styles (clean, punchy, distorted, slide, warm, drill, boom, short) in all twelve keys. |
+| **Synth One-Shots** | Leads, plucks, pads, keys, bells, brass and basses, each in several variations. |
+| **Chord Stabs** | Twelve chord types in six timbres (saw, organ, Rhodes, pad, pluck, brass). |
+| **FX Toolkit** | Risers, downlifters, impacts, sweeps, zaps and lasers, textures, reverses, tape stops and glitches. |
+| **Vocal Chops** | Ten syllables in male, female and high voices, dry, breathy and wet. |
+| **World Percussion** | Thirty instruments in low, mid and high versions. |
+| **Foley** | Taps, knocks, clicks, drips, zips and other small sounds. |
+
+**Why not Pixabay or sounds from commercial DAWs?** CarrotBox does not bundle downloaded sound collections. Pixabay's content license does not allow redistributing its sounds as a standalone sound library, and the sounds that come with commercial music software are licensed only to the people who own it. You can still use them: download sounds yourself under their license (Pixabay, Freesound and many others), then drop the files or folder onto the page, or use **File > Drum Kit / Sound Kit Loader** (`K`). They become a kit in the browser, with automatic categories and FPC auto-mapping.
+
 ---
 
 ## Effects and the master chain
@@ -172,7 +220,7 @@ The master chain processes the whole song, including what **Export Song** render
 
 ### Using plugins
 
-Plugins are small separate files in the `plugins/` folder, loaded when the page starts. All six are installed by default; remove the ones you do not use in the Plugin Manager and CarrotBox will not even download them.
+Plugins are small separate files in the `plugins/` folder, loaded when the page starts. All nine are installed by default; remove the ones you do not use in the Plugin Manager and CarrotBox will not even download them.
 
 - **Launcher** (`Tab`): a searchable list of everything installed. Type to filter, arrows and `Enter` to pick, `Esc` to close. Plugins you used recently float to the top.
 - **Plugin Manager** (right-click or `Shift`-click the plugin button in the second toolbar row, or Settings > Plugin Manager): install and remove plugins. The sizes shown are real file sizes.
@@ -184,7 +232,7 @@ Plugins are small separate files in the `plugins/` folder, loaded when the page 
 
 Setting: **Open plugin window when loading a plugin** controls whether picking a plugin also opens its window.
 
-The six plugins below are original CarrotBox plugins. Each is a CarrotBox take on the workflow of a well-known commercial plugin and shares no code or data with it.
+The plugins below are original CarrotBox plugins. Most are a CarrotBox take on the workflow of a well-known commercial product and share no code or data with it.
 
 ### Swarm (hybrid synth)
 
@@ -251,7 +299,36 @@ Distortion, Bitcrusher, Filter, Chorus, Flanger, Phaser, Delay, Reverb, Glitch R
 - input gain, dry/wet and output gain
 - 13 factory presets (Space Sweep, Tape Warble, Stutter Gate, Halftime Brake, Pulse Pan, Bit Furnace, Fold Machine, Radio Wreck, Dub Echo, Cathedral, Jet Flange and more)
 
-The same rack is built into Swarm, Prism and Seedling as their "Effects" tab.
+The same rack is built into Swarm, Prism, Seedling and Utawa as their "Effects" tab.
+
+### Utawa (singing synthesizer)
+
+A singing synthesizer in the spirit of VOCALOID. Type lyrics and every note in the channel sings the next syllable, in song order.
+
+- **Lyrics.** Syllables are separated by spaces or hyphens (`hel-lo world`). English words are split into syllables automatically and pronounced with spelling rules plus a dictionary of common lyric words (love, baby, heart, night, forever...). **Japanese (romaji)** is supported too (`ko n ni chi wa`). A lone `-` holds the previous vowel over another note (melisma), `.` makes a silent note, and `[l ah v]` spells phonemes directly (`a ae ah aw e er ih i uh u o ai ei oi au ou m n ng l r w y p b t d k g f v s z sh zh th dh h ch j ts`).
+- **Which note sings what.** The Lyrics tab shows each note of the channel with its syllable, the current bar highlighted. **Repeat lyrics** starts again when there are more notes than syllables (off: extra notes sing "ah"). Playing the plugin keyboard steps through the lyrics, so you can audition them; **Sing a test phrase** does it for you.
+- **The voice.** A glottal source with breath, a five-formant vocal tract with the "singer's formant", consonants (plosives with bursts, fricatives, nasals, glides), diphthongs, and final consonants that are sung when the note ends.
+- **Voice controls.** Gender / formant (deep to young), breath, tension (soft to pressed), growl, velocity sensitivity, choir unison (up to 8 singers with spread) and a robot mode that snaps the pitch.
+- **Expression.** Vibrato depth, rate and delay, scoop (slide up into notes), fall (drop at the end), drift, consonant length and release.
+- **Nine voice presets**: Mika (bright pop), Ren (warm male), Sora (young), Yuki (whisper), Diva (power vibrato), Soul (gritty male), Choir (ensemble), Echo (robot) and Lullaby (soft). Effects tab with a reverb by default.
+
+### Live Loops (loop launcher)
+
+A loop launcher in the spirit of GarageBand's Live Loops.
+
+- **1,248 loops**: 24 genres x 11 types (drum beats, top loops, percussion, bass, chords, keys, melodies, arps, pads, FX and vocal chops). Every loop is composed and rendered **at your song's tempo, key, mode (major / minor) and beats per bar**, so loops always fit the song without time stretching.
+- **A 16 x 16 grid**: 16 tracks (rows) and 16 scenes (columns). Click a cell to launch it at the next bar (or every 2 / 4 bars), click again to stop it. One cell per track plays at a time. The numbered buttons launch a whole scene; empty cells in a scene stop their track. While the song plays, launches follow the song's bar grid.
+- **Templates.** **Fill grid** builds a full set for the chosen genre: tracks for each loop type and scenes shaped like an arrangement (intro, groove, verse, build, drop, break, outro) whose harmonic loops share a chord progression.
+- **Loop browser.** Search by name, genre or type, preview at the song's tempo and key, double-click (or drag) to put a loop in the selected cell.
+- **Record.** Press **Record**, launch loops and scenes, then press Record again. The performance is written into the song from the selected bar (or the bar the song is playing): one channel per track, with a Slicex instrument per loop and one slice per bar, as a single undo step. The recorded songs keep playing anywhere because loops are rendered from their name.
+- Track names, volumes and mutes; keyboard: arrows move the selection, `Enter` launches, `Delete` clears, `Space` plays or stops, `R` records. The grid is kept in this browser.
+
+### Bouncify (make it bouncy)
+
+A tool that makes a lead, bass, chord part or drum part sound bouncy. It rewrites the current bar, the selected bars, the loop region or the whole channel with any mix of:
+
+- **Staccato** (shorter notes), **swing** (late off-beats), **octave hops**, **accents** (loud on the beat, soft off it), **scoops** (each note bends up into its pitch), **bouncing-ball echoes** (repeats that come faster and quieter), **chops** (long notes become rhythmic repeats), **pushes** (some notes land early) and an optional **sidechain pump** (a Gross Beat volume pump on the instrument).
+- Eight styles: Bouncy, Hop, Bouncing Ball, Rubber, Skippy, Jersey Bounce, Trampoline and Pump, an **Amount** knob, a before / after preview of the current bar, **New variation** and **Play from this bar**. Everything it writes is one undo step. Also in **Edit > Bouncify Notes...**.
 
 ---
 
@@ -265,6 +342,20 @@ The same rack is built into Swarm, Prism and Seedling as their "Effects" tab.
 
 ---
 
+## SP-404MKII and other USB MIDI devices
+
+Open **File > SP-404MKII / MIDI Devices...** (also in the plugin launcher and in Settings). CarrotBox connects through Web MIDI and finds the SP-404MKII (or another pad controller or a MIDI keyboard).
+
+- **Pads into CarrotBox.** The pads play the current channel: drum rows on drum channels, chromatic notes or the song's scale on pitched channels. With BeepBox's note recording on, they record into the pattern. The pad grid in the panel lights up as you play. If your pads don't start at note 36, press **Learn pad 1** and hit pad 1; a MIDI channel filter is there too.
+- **Tempo sync.** Either CarrotBox leads (it sends MIDI clock, song position and start / stop: set the SP's sync mode to follow MIDI), or the device leads (its Start plays the song from the loop start, Stop pauses, and its tempo becomes the song's tempo).
+- **Sequence the device.** Pick a channel and its notes are sent to the device while the song plays: drum rows trigger pads (row 1 = the note you set, normally pad 1), pitched notes keep their pitch. Notes are scheduled ahead with Web MIDI timestamps, loops included. Mute the channel in CarrotBox if you only want to hear the SP.
+- **Audio.** The SP-404MKII is also a USB audio interface. **Record the device's audio** opens the Audio Recorder with its input selected.
+- **Samples.** **Import samples** reads the SP's SD card or a folder of exported WAVs into a kit in the Sound Browser, ready for FPC pads.
+
+Web MIDI needs Chrome, Edge or another Chromium browser (Firefox asks for a site permission) and a page opened from https or `http://localhost`. BeepBox's own **Enable MIDI** preference can stay off; when it is on, the port the panel handles is skipped there so notes don't play twice.
+
+---
+
 ## Settings and preferences
 
 BeepBox's own **Preferences** menu still holds the classic options (auto follow, ghost notes, piano keys, note colors, layout and so on). Every entry works and takes effect right away.
@@ -273,6 +364,7 @@ CarrotBox's own panel is the **Settings** button next to the other buttons (or `
 
 | Setting | What it does |
 | --- | --- |
+| FL Studio interface | The FL Studio style workspace (see [FL Studio mode](#fl-studio-mode)). |
 | Modern UI | Switches to the polished skin. |
 | Interface size | Zooms the whole editor (good for high resolution screens). |
 | Color theme | Opens the theme picker. |
@@ -286,6 +378,7 @@ CarrotBox's own panel is the **Settings** button next to the other buttons (or `
 | Warn before leaving | Ask before closing or reloading when there are changes you have not saved or exported. |
 | Show play state in the page title | The browser tab says "Playing" while the song plays. |
 | Keyboard shortcuts | Opens the shortcut list. |
+| Hardware | Opens the SP-404MKII / MIDI Devices panel. |
 | Plugin Manager | Install or remove plugins. |
 | Imported samples and kits | Shows how much space your imports use and lets you clear them. |
 | Reset these settings | Puts everything in this panel back to its default. |
@@ -347,6 +440,28 @@ Press `?` for this list inside CarrotBox.
 | `Ctrl` + `S` | Export song |
 | `Ctrl` + `O` | Import song |
 
+**FL Studio mode** (only while Settings > FL Studio interface is on)
+
+| Keys | Action |
+| --- | --- |
+| `F5` | Playlist |
+| `F6` | Channel rack |
+| `F7` | Piano roll (the note grid) |
+| `F9` | Mixer (instead of master effects) |
+| `F10` | Settings |
+| `F1` | Shortcut list |
+| `L` | Pattern / song mode |
+
+**Live Loops** (while the Live Loops window has focus)
+
+| Keys | Action |
+| --- | --- |
+| Arrow keys | Move the selected cell |
+| `Enter` | Launch / stop the selected cell |
+| `Delete` / `Backspace` | Clear the selected cell |
+| `Space` | Start / stop the grid |
+| `R` | Start / finish recording |
+
 Single-letter shortcuts are paused while you are typing in a text box, a plugin window's number field or the launcher search.
 
 ---
@@ -359,7 +474,8 @@ Single-letter shortcuts are paused while you are typing in a text box, a plugin 
 - **Drop audio.** Dropping one audio file on the pattern area loads it into the current instrument as a sample; dropping several files, a folder or a `.zip` opens the kit importer.
 - **Export Song** writes WAV/MP3/MIDI/JSON like BeepBox.
 - **Recover Recent Song** lists the last songs you worked on (kept in your browser). Choose a version and press **Open this version**.
-- **Where things are stored.** Settings, installed plugin list, user presets and recently used plugins are in `localStorage`. Imported samples and kits are in `IndexedDB`. Both belong to the website address you are using, so a different address (or a private window) starts empty. Use **Settings > Imported samples & kits > Clear** to free the space.
+- **Recorded Live Loops** are saved in the song as Slicex instruments that point to a built-in loop rendered at the song's tempo, key and bar length at the moment you recorded. They are regenerated wherever the song is opened, so the link stays small.
+- **Where things are stored.** Settings, installed plugin list, user presets, recently used plugins, sound favorites, the Live Loops grid and the MIDI device setup are in `localStorage`. Imported samples and kits are in `IndexedDB`. Both belong to the website address you are using, so a different address (or a private window) starts empty. Use **Settings > Imported samples & kits > Clear** to free the space.
 - **Warn before leaving** (Settings) asks before you close the tab when changes were not saved or exported.
 
 ---
@@ -382,7 +498,17 @@ Single-letter shortcuts are paused while you are typing in a text box, a plugin 
 
 **The browser tab warns me when I leave.** That is the **Warn before leaving** option in Settings.
 
-**Why are there no samples from FL Studio or other commercial packs?** None are bundled. The built-in sounds are generated by CarrotBox. You can load your own files and folders, including packs you own.
+**Why are there no samples from Pixabay, FL Studio or other commercial packs?** None are bundled: their licenses do not allow redistributing the files inside another app. The 2,600+ built-in sounds and 1,248 loops are generated by CarrotBox. Download packs you are allowed to use and drop the folder or `.zip` on the page; they appear in the Sound Browser under **My Kits**.
+
+**My SP-404MKII (or another MIDI device) is not listed.** Web MIDI works in Chrome, Edge, Opera and other Chromium browsers (Firefox needs a site permission, Safari has none), and only on `https://` or `localhost` pages. Connect the device with a USB cable that carries data, open **File > SP-404MKII / MIDI Devices...**, press **Connect USB MIDI** and allow MIDI access when the browser asks. Devices plugged in later show up by themselves.
+
+**The pads play the wrong sounds.** The SP-404MKII profile expects pad 1 to 16 on notes 36 to 51 (C1 to D#2). If your pads start somewhere else, press **Learn pad 1** and hit pad 1; the other pads follow from there. Check the MIDI channel filter too.
+
+**A recorded Live Loops take is out of time after I changed the tempo.** Takes are rendered at the tempo they were recorded at. Set the tempo back, or open Live Loops at the new tempo and record the take again.
+
+**Utawa sings the wrong syllable on a note.** Each note takes the next syllable of the lyrics in the order notes start in the song. Use `-` to hold a syllable over another note, write the syllable split yourself (`hap-py`) or switch the lyric language. The Lyrics tab shows which note gets which syllable.
+
+**FL Studio mode looks different from FL Studio.** It is a recreation of the layout and colors, not a copy of the program. Turn it off in Settings to get the previous theme and layout back.
 
 ---
 
@@ -409,8 +535,9 @@ index.html              the page; loads carrotbox_editor.js and creates the edit
 carrotbox_editor.js     the built editor bundle (generated by build.pl, committed)
 build.pl                builds the bundle and syntax-checks it and the plugins
 dev.sh                  build + serve
-plugins/                the six plugins, one file each, loaded on demand
+plugins/                the nine plugins, one file each, loaded on demand
   swarm.js prism.js seedling.js chopshop.js sketchpad.js mangler.js
+  utawa.js liveloops.js bouncify.js
 src/
   beepbox_base.js       the (modded) BeepBox editor; includes the files below
   fl_changes.js         undo-able changes for the CarrotBox features
@@ -419,6 +546,8 @@ src/
   fl_samples.js         sample bank, kits, decoding, importing
   fl_soundfactory.js    the built-in generated sounds
   fl_soundpacks.js      the built-in sound catalog
+  fl_soundpacks2.js     the genre packs, 808s, one-shots, FX toolkit (2,000+ sounds)
+  fl_loops.js           the 1,248 Live Loops loops (rendered to tempo and key)
   fl_presets.js         instrument presets
   fl_themes.js          color themes
   fl_plugins.js         plugin catalog, registry, effect rack engine
@@ -431,6 +560,8 @@ src/
   fl_ui_widgets.js      shared widgets
   fl_ui_style.js        the stylesheet
   fl_ui_extras.js       settings, shortcuts, kit loader, generator, recorder
+  fl_hardware.js        Web MIDI devices: SP-404MKII profile, pads, clock, sequencer
+  fl_ui_flstudio.js     FL Studio mode: skin, top bar, channel rack, mixer
   fl_leadgen.js         the lead / melody generator
   fl_settings.js        BeepBox preference additions
 tools/
@@ -450,7 +581,7 @@ perl build.pl
 
 ### Testing
 
-`tools/smoke.js` is a headless browser test that starts the editor, opens and closes every plugin window in all three ways, renders every preset of the instrument plugins offline and checks the audio is finite and audible, checks that Sampler, Slicex and FPC sound on pitch and drum keys across the whole range, and fails on any console error.
+`tools/smoke.js` is a headless browser test that starts the editor, opens and closes every plugin window in all three ways, renders every preset of the instrument plugins offline and checks the audio is finite and audible, checks that Sampler, Slicex and FPC sound on pitch and drum keys across the whole range, renders Utawa and a Live Loops loop, checks the size of the sound library, toggles FL Studio mode on and off, and fails on any console error.
 
 ```sh
 npm install playwright      # once, plus: npx playwright install chromium
@@ -498,12 +629,12 @@ The skeleton for an instrument:
 Things to know:
 
 - **Parameters** live in the song and are always a plain JSON object. Merge them with your defaults when you read them (`Object.assign({}, defaults, params)`): a plugin that loads late may be handed `{}`.
-- **`info`** for voices has `freq`, `freqScale`, `gate`, `params`, `sampleRate`, `midi`, `notePitch`, `velocity`, `isNoise`, `bpm` and `key`.
+- **`info`** for voices has `freq`, `freqScale`, `gate`, `params`, `sampleRate`, `midi`, `notePitch`, `velocity`, `isNoise`, `bpm`, `key`, `channel`, `bar` and `noteIndex` (the position of the note in the channel, counted in the order notes start; Utawa uses it to pick the syllable).
 - **Gain staging:** CarrotBox scales plugin voices by a small base expression (0.04), so aim for a peak of about 0.5 to 1 in `render`.
 - **Effects** implement `createState(params, info)` and `process(state, params, left, right, start, end, ctx)` instead of voices. Instrument plugins can also offer `createInstrumentState` / `processInstrument` for per-instrument processing, as Swarm does for its effect rack.
 - **Tools** implement `open(host)` and use `host.writeNotes(...)` to put notes in the song.
 - **The host** (`buildEditor(host)`) gives you `knob`, `select`, `toggle`, `envelope` and `fxParam` bindings that update the song and undo history for you, `noteOn` / `noteOff` / `previewNote` for audio previews, `pickAudioFile`, `acceptSampleDrops` and `sample()` for audio files.
-- **`beepbox.CarrotAPI`** also exports `CarrotUI` (knobs, selects, tabs, sections, buttons), `CarrotFX` and `carrotFxRack` (the effect rack), DSP helpers (`CarrotDSP`, `CarrotADSR`, `CarrotSVF`, `CarrotDelayLine`, `CarrotWavetable`), `FLSampleBank`, `carrotToNorm` / `carrotFromNorm`, `flToast` and `addStyle`. Read the existing plugins for working examples of each.
+- **`beepbox.CarrotAPI`** also exports `CarrotUI` (knobs, selects, tabs, sections, buttons), `CarrotFX` and `carrotFxRack` (the effect rack), DSP helpers (`CarrotDSP`, `CarrotADSR`, `CarrotSVF`, `CarrotDelayLine`, `CarrotWavetable`), `FLSampleBank`, `FLLoops`, the song classes (`Note`, `Pattern`, `Instrument`) and the undo-able change classes, `carrotToNorm` / `carrotFromNorm`, `flToast` and `addStyle`. Wrap raw song edits in `doc.record(new ChangeFL(doc, () => { ... }, false))` to make them undoable, as Bouncify and Live Loops do. Read the existing plugins for working examples of each.
 - Use `onClose(host)` to clean up timers or audio when the window closes.
 
 ---
@@ -564,6 +695,26 @@ This section lists the main problems found in the first version of the mod and w
 - Honest download sizes in the Plugin Manager.
 - A smoke test, a development server and this README.
 
+### Second round
+
+**New**
+
+- FL Studio mode (Settings > Appearance > FL Studio interface): FL-style top bar with menus, hint bar, pattern / song switch, transport, tempo and position displays, snap and pattern pickers, CPU and output meters, a channel rack with step buttons, a mixer and the FL function keys.
+- Utawa, a singing synthesizer in the spirit of VOCALOID 6, with English and romaji lyrics, nine voices and expression controls.
+- Live Loops: a 16 by 16 launcher grid over 1,248 loops in 24 genres and 11 kinds, synced to the song, with scenes, templates and recording into the song.
+- Bouncify: eight ways to make a lead, bass or drum part bounce, with a preview and undo.
+- 2,056 new built-in sounds (2,680 in total): 24 genre packs, 808s in every key, synth one-shots, chord stabs, an FX toolkit, vocal chops, world percussion and foley.
+- SP-404MKII and other USB MIDI devices: pads, learn mode, clock in and out, a step sequencer and audio recording from the device.
+- Favorites in the Sound Browser, Bouncify and Live Loops in the Edit menu, Hardware in the File menu.
+
+**Fixed**
+
+- The shared reverb used by many built-in sounds is faster, with identical output.
+- Some new snare, clap and crushed sounds came out as NaN, silent or cut short during development; every built-in sound is now checked for finite, audible output with no long silence.
+- Loops were silent in the second half of bars longer than four beats.
+- Plugin labels showed "undefined" for plugins without an alternative name.
+- MIDI input ports used by a hardware profile no longer also play the current instrument twice.
+
 ---
 
 ## Known limitations
@@ -572,6 +723,10 @@ This section lists the main problems found in the first version of the mod and w
 - Built-in sounds are generated the first time you use them. Almost all take a few milliseconds; the longest melodic loops take about a tenth of a second, which can cause one tiny hiccup if they start while the song is playing.
 - Imported samples live in your browser. Move them between computers with **Save Project + Samples**.
 - Songs made with CarrotBox only open fully in CarrotBox. BeepBox will ignore the extra data (and the stock BeepBox site cannot play plugin instruments).
+- Utawa is a formant synthesizer, not a sample-based singer: it sounds clear but synthetic, and its English syllable rules are approximate (split words yourself when it guesses wrong).
+- Recorded Live Loops takes are tied to the tempo, key and bar length they were recorded at.
+- Hardware support needs Web MIDI (Chromium browsers, or Firefox with a site permission). The SP-404MKII's USB audio is recorded as an ordinary audio input, and CarrotBox cannot send samples to the SP or open its projects; import samples from its SD card instead.
+- FL Studio mode is an imitation of the layout and colors made from CarrotBox's own parts. Some FL windows (for example the full mixer routing) are simplified.
 
 ---
 

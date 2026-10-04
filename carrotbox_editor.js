@@ -33729,6 +33729,34 @@ You should be redirected to the song at:<br /><br />
     // (or the "Load" button, or drag) to load into the current instrument.
     // ======================================================================
     class FLSoundBrowser {
+        // ---- favorites (kept in this browser)
+        static favorites() {
+            try {
+                const list = JSON.parse(window.localStorage.getItem("carrotFavorites") || "[]");
+                return Array.isArray(list) ? list.filter(f => f && typeof f.id == "string") : [];
+            }
+            catch (error) {
+                return [];
+            }
+        }
+        static isFavorite(id) {
+            return FLSoundBrowser.favorites().some(f => f.id == id);
+        }
+        static toggleFavorite(payload) {
+            let list = FLSoundBrowser.favorites();
+            if (list.some(f => f.id == payload.id)) {
+                list = list.filter(f => f.id != payload.id);
+                flToast("Removed " + payload.name + " from Favorites", 1200);
+            }
+            else {
+                list.unshift({ id: payload.id, name: payload.name });
+                flToast("Added " + payload.name + " to Favorites", 1200);
+            }
+            try {
+                window.localStorage.setItem("carrotFavorites", JSON.stringify(list.slice(0, 500)));
+            }
+            catch (error) { }
+        }
         constructor(doc, editor) {
             this._doc = doc;
             this._editor = editor;
@@ -33904,6 +33932,11 @@ You should be redirected to the song at:<br /><br />
             if (recent.children.length > 0)
                 project.children.push(recent);
             roots.push(project);
+            // Favorites: sounds you starred
+            const favorites = { key: "favorites", name: "Favorites", type: "folder", children: [], empty: "Star a sound (the \u2606 next to Load) to keep it here." };
+            for (const fav of FLSoundBrowser.favorites())
+                favorites.children.push({ key: "fav:" + fav.id, name: fav.name, type: "sound", payload: { id: fav.id, name: fav.name } });
+            roots.push(favorites);
             // Built-in packs
             const packs = { key: "packs", name: "Packs (built-in)", type: "folder", children: [] };
             const folders = new Map();
@@ -34030,6 +34063,12 @@ You should be redirected to the song at:<br /><br />
                 element.appendChild(b);
             };
             if (row.type == "sound") {
+                const starred = FLSoundBrowser.isFavorite(row.payload.id);
+                addAction(starred ? "\u2605" : "\u2606", starred ? "Remove from Favorites" : "Add to Favorites", () => {
+                    FLSoundBrowser.toggleFavorite(row.payload);
+                    this._dirty = true;
+                    this.render();
+                });
                 addAction("Load", "Load into the current instrument (FPC: the selected pad)", () => FLActions.loadSample(this._doc, row.payload));
                 element.draggable = true;
                 element.addEventListener("dragstart", (event) => {
@@ -40460,6 +40499,12 @@ html.carrot-fl .cfl-top {
                 case "leadGen":
                     carrotOpen(editor, "flLeadGen");
                     return true;
+                case "bouncify":
+                    carrotOpenTool(editor, "bouncify");
+                    return true;
+                case "liveLoops":
+                    carrotOpenTool(editor, "liveloops");
+                    return true;
                 case "duplicateBar":
                     flCopyBarToNext(doc);
                     return true;
@@ -40622,7 +40667,7 @@ html.carrot-fl .cfl-top {
             this._nextBarButton = button({ class: "nextBarButton", type: "button", title: "Next Bar (right bracket)" });
             this._volumeSlider = new Slider(input({ title: "main volume", style: "flex-grow: 1; margin: 0;", type: "range", min: "0", max: "75", value: "50", step: "1" }), this.doc, (oldValue, newValue) => { this._setVolumeSlider(); return null; });
             this._fileMenu = select({ style: "width: 100%;" }, option({ selected: true, disabled: true, hidden: hideSelectMenuTitlesInOptions }, "File"), option({ value: "new" }, "New Blank Song"), option({ value: "import" }, "Import Song... (" + ctrlSymbol + "O)"), option({ value: "export" }, "Export Song... (" + ctrlSymbol + "S)"), option({ value: "saveProject" }, "Save Project + Samples (.json)"), option({ value: "kitLoader" }, "Drum Kit / Sound Kit Loader... (K)"), option({ value: "flPacks" }, "Import FL Studio Packs Folder..."), option({ value: "recorder" }, "Audio Recorder..."), option({ value: "hardware" }, "SP-404MKII / MIDI Devices..."), option({ value: "copyUrl" }, "Copy Song URL"), option({ value: "shareUrl" }, "Share Song URL"), option({ value: "shortenUrl" }, "Shorten Song URL"), option({ value: "songRecovery" }, "Recover Recent Song..."));
-            this._editMenu = select({ style: "width: 100%;" }, option({ selected: true, disabled: true, hidden: hideSelectMenuTitlesInOptions }, "Edit"), option({ value: "undo" }, "Undo (Z)"), option({ value: "redo" }, "Redo (Y)"), option({ value: "copy" }, "Copy Pattern (C)"), option({ value: "pasteNotes" }, "Paste Pattern Notes (V)"), option({ value: "pasteNumbers" }, "Paste Pattern Numbers (" + ctrlSymbol + "⇧V)"), option({ value: "insertBars" }, "Insert Bar (⏎)"), option({ value: "deleteBars" }, "Delete Selected Bars (⌫)"), option({ value: "insertChannel" }, "Insert Channel (" + ctrlSymbol + "⏎)"), option({ value: "deleteChannel" }, "Delete Selected Channels (" + ctrlSymbol + "⌫)"), option({ value: "selectAll" }, "Select All (A)"), option({ value: "selectChannel" }, "Select Channel (⇧A)"), option({ value: "duplicatePatterns" }, "Duplicate Reused Patterns (D)"), option({ value: "transposeUp" }, "Move Notes Up (+ or ⇧+)"), option({ value: "transposeDown" }, "Move Notes Down (- or ⇧-)"), option({ value: "moveNotesSideways" }, "Move All Notes Sideways..."), option({ value: "beatsPerBar" }, "Change Beats Per Bar..."), option({ value: "barCount" }, "Change Song Length..."), option({ value: "channelSettings" }, "Channel Settings... (Q)"), option({ value: "leadGen" }, "Generate Lead / Melody... (G)"), option({ value: "duplicateBar" }, "Copy Bar to Next Bar (" + ctrlSymbol + "D)"), option({ value: "clearPattern" }, "Clear Pattern Notes (⇧⌫)"), option({ value: "humanize" }, "Humanize Note Volumes (⇧H)"), option({ value: "quantize" }, "Quantize Notes to Rhythm (⇧Q)"));
+            this._editMenu = select({ style: "width: 100%;" }, option({ selected: true, disabled: true, hidden: hideSelectMenuTitlesInOptions }, "Edit"), option({ value: "undo" }, "Undo (Z)"), option({ value: "redo" }, "Redo (Y)"), option({ value: "copy" }, "Copy Pattern (C)"), option({ value: "pasteNotes" }, "Paste Pattern Notes (V)"), option({ value: "pasteNumbers" }, "Paste Pattern Numbers (" + ctrlSymbol + "⇧V)"), option({ value: "insertBars" }, "Insert Bar (⏎)"), option({ value: "deleteBars" }, "Delete Selected Bars (⌫)"), option({ value: "insertChannel" }, "Insert Channel (" + ctrlSymbol + "⏎)"), option({ value: "deleteChannel" }, "Delete Selected Channels (" + ctrlSymbol + "⌫)"), option({ value: "selectAll" }, "Select All (A)"), option({ value: "selectChannel" }, "Select Channel (⇧A)"), option({ value: "duplicatePatterns" }, "Duplicate Reused Patterns (D)"), option({ value: "transposeUp" }, "Move Notes Up (+ or ⇧+)"), option({ value: "transposeDown" }, "Move Notes Down (- or ⇧-)"), option({ value: "moveNotesSideways" }, "Move All Notes Sideways..."), option({ value: "beatsPerBar" }, "Change Beats Per Bar..."), option({ value: "barCount" }, "Change Song Length..."), option({ value: "channelSettings" }, "Channel Settings... (Q)"), option({ value: "leadGen" }, "Generate Lead / Melody... (G)"), option({ value: "duplicateBar" }, "Copy Bar to Next Bar (" + ctrlSymbol + "D)"), option({ value: "clearPattern" }, "Clear Pattern Notes (⇧⌫)"), option({ value: "humanize" }, "Humanize Note Volumes (⇧H)"), option({ value: "quantize" }, "Quantize Notes to Rhythm (⇧Q)"), option({ value: "bouncify" }, "Bouncify Notes..."), option({ value: "liveLoops" }, "Live Loops..."));
             this._optionDefs = flPreferenceDefs();
             this._optionsMenu = select({ style: "width: 100%;" }, option({ selected: true, disabled: true, hidden: hideSelectMenuTitlesInOptions }, "Preferences"), ...this._optionDefs.map(def => option({ value: def[0] }, def[2])));
             this._scaleSelect = buildOptions(select(), Config.scales.map(scale => scale.name));
