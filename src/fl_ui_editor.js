@@ -231,6 +231,9 @@
                 case "recorder":
                     carrotOpen(editor, "flRecorder");
                     return true;
+                case "hardware":
+                    carrotOpen(editor, "flHardware");
+                    return true;
             }
         }
         else if (menu == "edit") {

@@ -15727,6 +15727,9 @@ var beepbox = (function (exports) {
             this._onMidiMessage = (event) => {
                 if (!this._doc.prefs.enableMidi || localStorage.getItem("midiHandlerId") != id)
                     return;
+                // CarrotBox: ports handled by the SP-404MKII / MIDI Devices panel are skipped here
+                if (window.carrotMidiClaimed && event.target && window.carrotMidiClaimed.has(event.target.id))
+                    return;
                 const isDrum = this._doc.song.getChannelIsNoise(this._doc.channel);
                 let [eventType, key, velocity] = event.data;
                 eventType &= 0xF0;
@@ -22812,6 +22815,7 @@ You should be redirected to the song at:<br /><br />
     //@@INCLUDE fl_ui_prompts.js@@
     //@@INCLUDE fl_ui_plugins.js@@
     //@@INCLUDE fl_ui_extras.js@@
+    //@@INCLUDE fl_hardware.js@@
     //@@INCLUDE fl_ui_editor.js@@
 
     const hideSelectMenuTitlesInOptions = !isOnMac;
@@ -22835,7 +22839,7 @@ You should be redirected to the song at:<br /><br />
             this._prevBarButton = button({ class: "prevBarButton", type: "button", title: "Previous Bar (left bracket)" });
             this._nextBarButton = button({ class: "nextBarButton", type: "button", title: "Next Bar (right bracket)" });
             this._volumeSlider = new Slider(input({ title: "main volume", style: "flex-grow: 1; margin: 0;", type: "range", min: "0", max: "75", value: "50", step: "1" }), this.doc, (oldValue, newValue) => { this._setVolumeSlider(); return null; });
-            this._fileMenu = select({ style: "width: 100%;" }, option({ selected: true, disabled: true, hidden: hideSelectMenuTitlesInOptions }, "File"), option({ value: "new" }, "New Blank Song"), option({ value: "import" }, "Import Song... (" + ctrlSymbol + "O)"), option({ value: "export" }, "Export Song... (" + ctrlSymbol + "S)"), option({ value: "saveProject" }, "Save Project + Samples (.json)"), option({ value: "kitLoader" }, "Drum Kit / Sound Kit Loader... (K)"), option({ value: "flPacks" }, "Import FL Studio Packs Folder..."), option({ value: "recorder" }, "Audio Recorder..."), option({ value: "copyUrl" }, "Copy Song URL"), option({ value: "shareUrl" }, "Share Song URL"), option({ value: "shortenUrl" }, "Shorten Song URL"), option({ value: "songRecovery" }, "Recover Recent Song..."));
+            this._fileMenu = select({ style: "width: 100%;" }, option({ selected: true, disabled: true, hidden: hideSelectMenuTitlesInOptions }, "File"), option({ value: "new" }, "New Blank Song"), option({ value: "import" }, "Import Song... (" + ctrlSymbol + "O)"), option({ value: "export" }, "Export Song... (" + ctrlSymbol + "S)"), option({ value: "saveProject" }, "Save Project + Samples (.json)"), option({ value: "kitLoader" }, "Drum Kit / Sound Kit Loader... (K)"), option({ value: "flPacks" }, "Import FL Studio Packs Folder..."), option({ value: "recorder" }, "Audio Recorder..."), option({ value: "hardware" }, "SP-404MKII / MIDI Devices..."), option({ value: "copyUrl" }, "Copy Song URL"), option({ value: "shareUrl" }, "Share Song URL"), option({ value: "shortenUrl" }, "Shorten Song URL"), option({ value: "songRecovery" }, "Recover Recent Song..."));
             this._editMenu = select({ style: "width: 100%;" }, option({ selected: true, disabled: true, hidden: hideSelectMenuTitlesInOptions }, "Edit"), option({ value: "undo" }, "Undo (Z)"), option({ value: "redo" }, "Redo (Y)"), option({ value: "copy" }, "Copy Pattern (C)"), option({ value: "pasteNotes" }, "Paste Pattern Notes (V)"), option({ value: "pasteNumbers" }, "Paste Pattern Numbers (" + ctrlSymbol + "⇧V)"), option({ value: "insertBars" }, "Insert Bar (⏎)"), option({ value: "deleteBars" }, "Delete Selected Bars (⌫)"), option({ value: "insertChannel" }, "Insert Channel (" + ctrlSymbol + "⏎)"), option({ value: "deleteChannel" }, "Delete Selected Channels (" + ctrlSymbol + "⌫)"), option({ value: "selectAll" }, "Select All (A)"), option({ value: "selectChannel" }, "Select Channel (⇧A)"), option({ value: "duplicatePatterns" }, "Duplicate Reused Patterns (D)"), option({ value: "transposeUp" }, "Move Notes Up (+ or ⇧+)"), option({ value: "transposeDown" }, "Move Notes Down (- or ⇧-)"), option({ value: "moveNotesSideways" }, "Move All Notes Sideways..."), option({ value: "beatsPerBar" }, "Change Beats Per Bar..."), option({ value: "barCount" }, "Change Song Length..."), option({ value: "channelSettings" }, "Channel Settings... (Q)"), option({ value: "leadGen" }, "Generate Lead / Melody... (G)"), option({ value: "duplicateBar" }, "Copy Bar to Next Bar (" + ctrlSymbol + "D)"), option({ value: "clearPattern" }, "Clear Pattern Notes (⇧⌫)"), option({ value: "humanize" }, "Humanize Note Volumes (⇧H)"), option({ value: "quantize" }, "Quantize Notes to Rhythm (⇧Q)"));
             this._optionDefs = flPreferenceDefs();
             this._optionsMenu = select({ style: "width: 100%;" }, option({ selected: true, disabled: true, hidden: hideSelectMenuTitlesInOptions }, "Preferences"), ...this._optionDefs.map(def => option({ value: def[0] }, def[2])));

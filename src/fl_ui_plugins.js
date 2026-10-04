@@ -176,6 +176,17 @@
 	padding-top: 9vh;
 	background: rgba(0,0,0,0.35);
 }
+.cb-window-body input[type=number] {
+	height: 22px;
+	padding: 0 4px;
+	border: 1px solid transparent;
+	border-radius: 4px;
+	background: ${ColorConfig.uiWidgetBackground};
+	color: ${ColorConfig.primaryText};
+	font: inherit;
+	font-size: 12px;
+}
+.cb-window-body input[type=number]:focus { outline: none; border-color: ${ColorConfig.uiWidgetFocus}; }
 .cb-ask {
 	width: min(380px, calc(100vw - 32px));
 	display: flex;
@@ -1894,6 +1905,7 @@
                 { icon: "Kt", name: "Drum Kit / Sound Kit Loader", sub: "Load FL Studio kits, folders and zips", badge: "Tool", run: () => carrotOpen(this._editor, "flKits") },
                 { icon: "Rc", name: "Audio Recorder", sub: "Record vocals or instruments with mixing effects", badge: "Tool", run: () => carrotOpen(this._editor, "flRecorder") },
                 { icon: "Br", name: "Sound Browser", sub: "Samples, kits and packs (F8)", badge: "Tool", run: () => this._editor.flShowBrowser(true) },
+                { icon: "SP", name: "SP-404MKII / MIDI Devices", sub: "USB pads, tempo sync, sequencing, audio and samples", badge: "Tool", run: () => carrotOpen(this._editor, "flHardware") },
             ];
             for (const t of tools)
                 items.push(Object.assign({ group: "Tools", color: "#555", key: t.name }, t));

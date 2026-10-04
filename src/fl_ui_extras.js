@@ -298,6 +298,9 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
             })), row("Reduce motion", "Turns off animations.", t("reduceMotion"))), section("Sound", row("UI sounds", "Soft clicks when you press buttons, open windows and generate ideas.", HTML.div({ style: "display: flex; align-items: center; gap: 6px;" }, volume, t("uiSounds"))), row("Metronome volume", "Toggle the metronome with its toolbar button or T.", metronome)), section("Workflow", row("Extra keyboard shortcuts", "K kits, G generator, E edit plugin, B browser, T metronome, , settings, ? help (Tab, F5, F8, F9 always work).", t("extraShortcuts")), row("Open plugin window when loading a plugin", "Turn off to load plugins without opening their window.", t("openPluginOnLoad")), row("Show messages", "The little notices at the bottom of the editor.", t("toasts")), row("Warn before leaving", "Ask for confirmation when you close or reload the page with edits that weren't saved or exported.", t("confirmLeave")), row("Show play state in the page title", "The browser tab says Playing while the song plays.", t("playingTitle")), row("Keyboard shortcuts", "", CarrotUI.button("Show list…", () => {
                 this.close();
                 CarrotShortcutsPanel.open(editor);
+            })), row("Hardware", "Roland SP-404MKII and other USB MIDI devices: pads, tempo sync, sequencing, audio and samples.", CarrotUI.button("SP-404MKII / MIDI…", () => {
+                this.close();
+                CarrotHardwarePanel.open(editor);
             })), row("Plugins", "Install or remove plugins to keep CarrotBox light.", CarrotUI.button("Plugin Manager…", () => {
                 this.close();
                 CarrotPluginManager.open(editor);
@@ -1375,6 +1378,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
             case "flKits:packs": return CarrotKitLoader.open(editor, 3);
             case "flLeadGen": return CarrotGeneratorPanel.open(editor);
             case "flRecorder": return CarrotRecorder.open(editor);
+            case "flHardware": return CarrotHardwarePanel.open(editor);
         }
         editor._openPrompt(name);
         return null;
