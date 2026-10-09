@@ -19,6 +19,10 @@
             blurb: "Grow sounds instead of programming them: plant a seed, explore its mutated branches, edit the sound's DNA, or let it grow a patch that imitates a sample.",
         },
         {
+            id: "synthvault", name: "Synth Vault", kind: "instrument", file: "plugins/synthvault.js", alt: "Analog Lab Pro", icon: "SV", color: "#ff8a2a", sizeKB: 112,
+            blurb: "114 ready-to-play sounds from nine classic-instrument engines (ladder monosynth, poly analog, dual-layer CS, 6-op FM, tine and reed electric pianos and a clav, acoustic piano, tonewheel organ with rotary speaker, string machine, tape replay) in one browser with types, characters, likes and previews, four macros, Multi split/layer and an FX rack.",
+        },
+        {
             id: "chopshop", name: "Chop Shop", kind: "instrument", file: "plugins/chopshop.js", alt: "Serato Sample", icon: "Cs", color: "#ff6b6b", sizeKB: 45,
             blurb: "Sample chopper: finds 16 cues for you, detects key & BPM, shifts key without changing speed, time-stretches to your song and plays cues from pads or keys.",
         },

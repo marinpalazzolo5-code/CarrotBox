@@ -47,7 +47,7 @@ function check(label, ok, detail) {
 		await page.keyboard.press("Enter");
 		await page.waitForTimeout(500);
 	};
-	for (const query of ["swarm", "prism", "seedling", "chop", "sketch", "mangler", "utawa", "live loops", "bouncify", "sp-404", "audiomidi", "curvebox"]) {
+	for (const query of ["swarm", "prism", "seedling", "chop", "sketch", "mangler", "utawa", "live loops", "bouncify", "sp-404", "audiomidi", "curvebox", "synth vault"]) {
 		await launch(query);
 		const opened = await count();
 		await page.locator(".cb-window .cb-window-title button[title^='Close']").first().click();
@@ -80,7 +80,7 @@ function check(label, ok, detail) {
 		pattern.notes.length = 0;
 		for (let i = 0; i < 4; i++) pattern.notes.push(new beepbox.Note(12 + i * 3, i * ppb, i * ppb + ppb, 3, false));
 		const results = {};
-		for (const id of ["swarm", "prism", "seedling", "chopshop", "utawa"]) {
+		for (const id of ["swarm", "prism", "seedling", "chopshop", "utawa", "synthvault"]) {
 			const plugin = beepbox.CarrotPlugins.get(id);
 			if (!plugin) { results[id] = "not registered"; continue; }
 			const presets = typeof plugin.presets == "function" ? plugin.presets() : (plugin.presets || []);
@@ -111,7 +111,7 @@ function check(label, ok, detail) {
 		}
 		return results;
 	});
-	for (const id of ["swarm", "prism", "seedling", "utawa"]) {
+	for (const id of ["swarm", "prism", "seedling", "utawa", "synthvault"]) {
 		const r = audio[id];
 		check(id + " renders finite, audible sound for every preset", typeof r == "object" && r.nan == 0 && r.quiet == 0 && r.worstPeak < 4, JSON.stringify(r));
 	}
