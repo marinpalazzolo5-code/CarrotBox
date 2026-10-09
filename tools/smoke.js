@@ -327,11 +327,54 @@ function check(label, ok, detail) {
 			for (let i = 0; i < beat * SR * 0.9 && t0 + i < x.length; i++) x[t0 + i] += 0.35 * (Math.sin(2 * Math.PI * f * i / SR) + 0.4 * Math.sin(4 * Math.PI * f * i / SR)) * Math.min(1, i / 200);
 		}
 		const r = await plugin.analyze(x, {});
-		const notes = r.bass.slice(0, 16).map(n => n.midi);
-		const right = r.bass.filter(n => bassLine.indexOf(n.midi) != -1).length;
-		return { bpm: r.bpm, notes: notes.join(" "), right, total: r.bass.length, drums: r.drums.length };
+		const bass = r.notes.filter(n => n.role == "bass");
+		const notes = bass.slice(0, 16).map(n => n.midi);
+		const right = bass.filter(n => bassLine.indexOf(n.midi) != -1).length;
+		return { bpm: r.bpm, notes: notes.join(" "), right, total: bass.length, drums: r.drums.length };
 	});
 	check("AudioMidi finds the tempo and the bass line of a test signal", Math.abs(am.bpm - 100) < 0.6 && am.total >= 8 && am.right / am.total > 0.7, JSON.stringify(am));
+	// ---- AudioMidi on a small arrangement: kick, snare, hats, bass, chords and a lead at 120 BPM
+	const am2 = await page.evaluate(async () => {
+		const plugin = beepbox.CarrotPlugins.get("audiomidi");
+		const SR = plugin.SR, beat = 0.5, seconds = 16;
+		const x = new Float32Array(Math.floor(seconds * SR));
+		let seed = 7;
+		const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647 * 2 - 1;
+		const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+		const tone = (t, midi, dur, amp, partials) => {
+			const t0 = Math.floor(t * SR), f = hz(midi);
+			for (let i = 0; i < dur * SR && t0 + i < x.length; i++) {
+				let v = 0;
+				for (let h = 1; h <= partials; h++) v += Math.sin(2 * Math.PI * f * h * i / SR) / h;
+				x[t0 + i] += amp * v * Math.min(1, i / 100) * Math.min(1, (dur * SR - i) / 300) * Math.exp(-i / (2 * SR));
+			}
+		};
+		const truth = [];
+		const chords = [[60, 64, 67], [57, 60, 64], [53, 57, 60], [55, 59, 62]], bassRoots = [36, 33, 41, 43], lead = [72, 74, 76, 79, 76, 74, 72, 71];
+		for (let bar = 0; bar < 8; bar++) {
+			const t = 0.25 + bar * 4 * beat, c = bar % 4;
+			for (const m of chords[c]) { tone(t, m, 4 * beat * 0.95, 0.09, 6); truth.push({ t, midi: m }); }
+			for (let b = 0; b < 4; b++) {
+				tone(t + b * beat, bassRoots[c], beat * 0.8, 0.22, 4); truth.push({ t: t + b * beat, midi: bassRoots[c] });
+				const k = Math.floor((t + b * beat) * SR);
+				// kick (a falling sine), snare (noise and a body) on 2 and 4, closed hats (high noise) between
+				let ph = 0;
+				for (let i = 0; i < 0.3 * SR && k + i < x.length; i++) { ph += 2 * Math.PI * (45 + 110 * Math.exp(-i / (0.03 * SR))) / SR; x[k + i] += 0.7 * Math.sin(ph) * Math.exp(-i / (0.12 * SR)); }
+				if (b % 2) for (let i = 0; i < 0.2 * SR && k + i < x.length; i++) x[k + i] += (0.3 * rand() + 0.3 * Math.sin(2 * Math.PI * 190 * i / SR) * Math.exp(-i / (0.03 * SR))) * Math.exp(-i / (0.06 * SR));
+				const h = Math.floor((t + b * beat + beat / 2) * SR);
+				let n1 = 0, n2 = 0;
+				for (let i = 0; i < 0.06 * SR && h + i < x.length; i++) { const r = rand(), d1 = r - n1, d2 = d1 - n2; n1 = r; n2 = d1; x[h + i] += 0.1 * d2 * Math.exp(-i / (0.015 * SR)); }
+			}
+			for (let b = 0; b < 2; b++) { const m = lead[(bar * 2 + b) % lead.length]; tone(t + b * 2 * beat, m, beat * 1.8, 0.12, 3); truth.push({ t: t + b * 2 * beat, midi: m }); }
+		}
+		const r = await plugin.analyze(x, {});
+		let hit = 0;
+		for (const g of truth) if (r.notes.some(n => Math.abs(n.t - g.t) < 0.06 && n.midi == g.midi)) hit++;
+		const correct = r.notes.filter(n => truth.some(g => Math.abs(n.t - g.t) < 0.06 && n.midi == g.midi)).length;
+		const kicks = r.drums.filter(d => d.kind == "kick").length, snares = r.drums.filter(d => d.kind == "snare" || d.kind == "clap").length;
+		return { snares, bpm: r.bpm, key: r.key.name, recall: +(hit / truth.length).toFixed(2), precision: +(correct / Math.max(1, r.notes.length)).toFixed(2), found: r.notes.length, truth: truth.length, kicks, drums: r.drums.length, chords: (r.chords || []).slice(0, 4).map(c => c.name || c).join(" ") };
+	});
+	check("AudioMidi transcribes a small arrangement (tempo, key, notes, drums)", Math.abs(am2.bpm - 120) < 0.6 && am2.recall > 0.6 && am2.precision > 0.5 && am2.kicks >= 28 && am2.snares >= 12 && am2.drums < 110 && am2.key == "C major", JSON.stringify(am2));
 	check("sampler, slicex and fpc sound on every key", Object.keys(keys).length == 0, JSON.stringify(keys));
 
 	check("no errors in the console", errors.length == 0, errors.slice(0, 5).join(" | "));

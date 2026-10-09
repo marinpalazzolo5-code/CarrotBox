@@ -2127,7 +2127,7 @@
             HTML, SVG, Config, FLConfig, CarrotDSP, CarrotADSR, CarrotSVF, CarrotBiquad, CarrotDelayLine, CarrotFX, CarrotUI,
             CarrotWavetable, CarrotWavetableBank, FLSampleBank, FLSoundFactory, FLKitLibrary, FLLoops, CarrotIdeaGen, CARROT_GEN_STYLES, carrotWriteNotes, carrotNormalizeNotes, flToast, flMidiName, flSetupCanvas, flCss, flResolve, flCloneJson,
             carrotFxRack, carrotWriteNotes, carrotSongScale, carrotSyncOptions, carrotSyncBeats, carrotFormatValue, carrotToNorm, carrotFromNorm,
-            CarrotWindows, CarrotPlugins, carrotNewChannel, carrotNameChannel,
+            CarrotWindows, CarrotPlugins, carrotNewChannel, carrotNameChannel, flReadDragPayload, flDragHasPayload, flDragHasFiles,
             // song editing (for tools that write into the song)
             Note, Pattern, Instrument, ChangeGroup, ChangeFL, ChangeBarCount, ChangeChannelBar, ChangeInstrumentsFlags, ChangeNoteAdded, ChangeNoteTruncate, ChangeEnsurePatternExists, ChangePatternNumbers,
             ChangeSong, ChangeTempo, ChangeKey, ChangeScale, ChangeBeatsPerBar, ChangePreset, ChangeLoop, EditorConfig, FLActions,
@@ -2149,11 +2149,18 @@
     // bars: array (one per bar) of note lists [{start, end, pitches, size}] in
     // parts (Config.partsPerBeat per beat). Writes into `channel` starting at
     // `startBar`, replacing what's there (options.replace) and making new
-    // patterns where needed. Returns true if anything was written.
+    // patterns where needed (options.freshPatterns: never edit a pattern other
+    // bars share). options.overlap keeps overlapping notes (real polyphony)
+    // instead of merging them into chords. Returns true if anything was written.
     // BeepBox patterns hold one note at a time (a chord is one note with several
     // pitches), sorted and never overlapping. Notes that start together become one
     // chord; a note that is still sounding when the next one starts is cut there.
-    function carrotNormalizeNotes(notes, barLength, maxPitch) {
+    // With allowOverlap, notes keep their own lengths (patterns may hold overlapping
+    // notes): only notes that start and end together become one chord, and a note is
+    // cut where the next note on the same pitch starts.
+    function carrotNormalizeNotes(notes, barLength, maxPitch, allowOverlap = false) {
+        if (allowOverlap)
+            return carrotNormalizeOverlapping(notes, barLength, maxPitch);
         const list = [];
         for (const n of notes || []) {
             if (!n || !n.pitches)
@@ -2188,6 +2195,53 @@
         }
         for (const n of out)
             n.pitches = Array.from(new Set(n.pitches)).sort((a, b) => a - b).slice(0, Config.maxChordSize);
+        return out;
+    }
+    function carrotNormalizeOverlapping(notes, barLength, maxPitch) {
+        const list = [];
+        for (const n of notes || []) {
+            if (!n || !n.pitches)
+                continue;
+            const start = Math.max(0, Math.min(barLength - 1, Math.round(n.start)));
+            const end = Math.max(start + 1, Math.min(barLength, Math.round(n.end)));
+            const size = n.size != undefined && isFinite(n.size) ? Math.max(0, Math.min(Config.noteSizeMax, Math.round(n.size))) : Config.noteSizeMax;
+            for (const raw of n.pitches) {
+                const pitch = Math.round(raw);
+                if (isFinite(pitch) && pitch >= 0 && pitch <= maxPitch)
+                    list.push({ start, end, pitch, size, pins: n.pins && n.pitches.length == 1 ? n.pins : null });
+            }
+        }
+        list.sort((a, b) => a.start - b.start || a.pitch - b.pitch);
+        // a note is cut where the next note on its pitch starts (they would share one key)
+        const lastOnPitch = new Map();
+        for (const n of list) {
+            const previous = lastOnPitch.get(n.pitch);
+            if (previous && previous.end > n.start) {
+                if (previous.start == n.start)
+                    n.dropped = true;
+                else {
+                    previous.end = n.start;
+                    if (previous.pins)
+                        previous.pins = previous.pins.filter(pin => pin.time <= previous.end - previous.start);
+                }
+            }
+            if (!n.dropped)
+                lastOnPitch.set(n.pitch, n);
+        }
+        // notes with the same start, end, size and no bends share one chord (up to the chord size)
+        const out = [];
+        for (const n of list) {
+            if (n.dropped)
+                continue;
+            const chord = n.pins ? null : out.find(o => o.start == n.start && o.end == n.end && o.size == n.size && !o.pins && o.pitches.length < Config.maxChordSize);
+            if (chord)
+                chord.pitches.push(n.pitch);
+            else
+                out.push({ start: n.start, end: n.end, pitches: [n.pitch], size: n.size, pins: n.pins ? n.pins.slice() : null });
+        }
+        for (const n of out)
+            n.pitches.sort((a, b) => a - b);
+        out.sort((a, b) => a.start - b.start || a.pitches[0] - b.pitches[0]);
         return out;
     }
     function carrotWriteNotes(doc, bars, options = {}) {
@@ -2233,7 +2287,7 @@
                 continue;
             if (replace && pattern.notes.length > 0)
                 group.append(new ChangeNoteTruncate(doc, pattern, 0, barLength));
-            for (const n of carrotNormalizeNotes(notes, barLength, maxPitch)) {
+            for (const n of carrotNormalizeNotes(notes, barLength, maxPitch, !!options.overlap)) {
                 const note = new Note(n.pitches[0], n.start, n.end, n.size, isNoise);
                 note.pitches = n.pitches;
                 if (n.pins && n.pins.length >= 2) {

@@ -39,8 +39,8 @@
             blurb: "Makes a lead, bass or any part bouncy: staccato, swing, octave hops, accents, pitch scoops, bouncing-ball echoes, chops, pushes and an optional sidechain pump. Eight styles, one undo step.",
         },
         {
-            id: "audiomidi", name: "AudioMidi", kind: "tool", file: "plugins/audiomidi.js", icon: "AM", color: "#00c8ff", sizeKB: 68, experimental: true,
-            blurb: "Experimental: turns a WAV or MP3 into a song. Finds the tempo, beat and key, hears the drums, follows the bass and lead, recognizes the chords and an inner voice, and writes them as channels (with the original muted for A/B).",
+            id: "audiomidi", name: "AudioMidi", kind: "tool", file: "plugins/audiomidi.js", icon: "AM", color: "#00c8ff", sizeKB: 93,
+            blurb: "Turns a WAV, MP3, OGG or FLAC into a song: finds the tempo (even when it drifts), beat, meter and key, hears every drum hit and matches it to the closest CarrotBox drum, and writes the bass, lead and chords as notes with velocity, glides and bends (the original stays muted on its own channel for A/B).",
         },
         {
             id: "mangler", name: "Mangler FX", kind: "effect", file: "plugins/mangler.js", alt: "UGFX", icon: "Mg", color: "#f78c6c", sizeKB: 21,

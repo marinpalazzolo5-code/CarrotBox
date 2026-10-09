@@ -11112,6 +11112,200 @@ var beepbox = (function (exports) {
         }
         return { channels, sampleRate: sampleRate || 44100 };
     }
+    // A small FLAC decoder, used when the browser cannot decode FLAC itself.
+    function flParseFlac(arrayBuffer) {
+        const bytes = new Uint8Array(arrayBuffer);
+        if (bytes.length < 42 || bytes[0] != 0x66 || bytes[1] != 0x4c || bytes[2] != 0x61 || bytes[3] != 0x43)
+            return null;
+        let pos = 0; // in bits
+        const bit = () => { const b = (bytes[pos >> 3] >> (7 - (pos & 7))) & 1; pos++; return b; };
+        const read = (n) => {
+            let v = 0;
+            while (n > 0) {
+                const byte = bytes[pos >> 3], used = pos & 7, take = Math.min(n, 8 - used);
+                v = v * (1 << take) + ((byte >> (8 - used - take)) & ((1 << take) - 1));
+                pos += take;
+                n -= take;
+            }
+            return v;
+        };
+        const readSigned = (n) => { const v = read(n); return n > 0 && v >= Math.pow(2, n - 1) ? v - Math.pow(2, n) : v; };
+        const unary = () => {
+            let q = 0;
+            while (pos < bytes.length * 8) {
+                if ((pos & 7) == 0 && bytes[pos >> 3] == 0) { q += 8; pos += 8; continue; }
+                if (bit()) return q;
+                q++;
+            }
+            throw new Error("end of FLAC data");
+        };
+        // metadata
+        pos = 32;
+        let sampleRate = 44100, channelCount = 2, bps = 16, total = 0;
+        for (let last = 0; !last;) {
+            last = bit();
+            const type = read(7), length = read(24), start = pos;
+            if (type == 0) {
+                read(16); read(16); read(24); read(24);
+                sampleRate = read(20);
+                channelCount = read(3) + 1;
+                bps = read(5) + 1;
+                total = read(36);
+            }
+            pos = start + length * 8;
+            if (pos >= bytes.length * 8)
+                return null;
+        }
+        const chunks = [];
+        for (let c = 0; c < channelCount; c++)
+            chunks.push([]);
+        let decodedFrames = 0;
+        const sampleSizes = [0, 8, 12, 0, 16, 20, 24, 32];
+        const rates = [0, 88200, 176400, 192000, 8000, 16000, 22050, 24000, 32000, 44100, 48000, 96000];
+        function subframe(n, depth, out) {
+            bit();
+            const type = read(6);
+            let wasted = 0;
+            if (bit())
+                wasted = unary() + 1;
+            depth -= wasted;
+            if (type == 0) {
+                const v = readSigned(depth);
+                out.fill(v);
+            }
+            else if (type == 1) {
+                for (let i = 0; i < n; i++)
+                    out[i] = readSigned(depth);
+            }
+            else {
+                let order, coefs = null, shift = 0;
+                if (type >= 8 && type <= 12)
+                    order = type - 8;
+                else if (type >= 32)
+                    order = type - 31;
+                else
+                    throw new Error("bad FLAC subframe");
+                for (let i = 0; i < order; i++)
+                    out[i] = readSigned(depth);
+                if (type >= 32) {
+                    const precision = read(4) + 1;
+                    shift = readSigned(5);
+                    coefs = [];
+                    for (let i = 0; i < order; i++)
+                        coefs.push(readSigned(precision));
+                }
+                // residual
+                const method = read(2), paramBits = method == 0 ? 4 : 5, escape = method == 0 ? 15 : 31;
+                const partitions = 1 << read(4);
+                let i = order;
+                for (let p = 0; p < partitions; p++) {
+                    const count = (n / partitions) - (p == 0 ? order : 0);
+                    const param = read(paramBits);
+                    if (param == escape) {
+                        const raw = read(5);
+                        for (let k = 0; k < count; k++)
+                            out[i++] = readSigned(raw);
+                    }
+                    else {
+                        for (let k = 0; k < count; k++) {
+                            const v = unary() * (1 << param) + read(param);
+                            out[i++] = v % 2 ? -(v + 1) / 2 : v / 2;
+                        }
+                    }
+                }
+                // prediction
+                if (coefs) {
+                    const div = Math.pow(2, shift);
+                    for (let j = order; j < n; j++) {
+                        let sum = 0;
+                        for (let c = 0; c < order; c++)
+                            sum += coefs[c] * out[j - 1 - c];
+                        out[j] += Math.floor(sum / div);
+                    }
+                }
+                else if (order == 1)
+                    for (let j = 1; j < n; j++) out[j] += out[j - 1];
+                else if (order == 2)
+                    for (let j = 2; j < n; j++) out[j] += 2 * out[j - 1] - out[j - 2];
+                else if (order == 3)
+                    for (let j = 3; j < n; j++) out[j] += 3 * out[j - 1] - 3 * out[j - 2] + out[j - 3];
+                else if (order == 4)
+                    for (let j = 4; j < n; j++) out[j] += 4 * out[j - 1] - 6 * out[j - 2] + 4 * out[j - 3] - out[j - 4];
+            }
+            if (wasted)
+                for (let i = 0; i < n; i++)
+                    out[i] *= 1 << wasted;
+        }
+        while (pos + 16 <= bytes.length * 8 && (total == 0 || decodedFrames < total)) {
+            // frames start on a byte with the sync code 0xFFF8 / 0xFFF9
+            pos = (pos + 7) & ~7;
+            if (!(bytes[pos >> 3] == 0xff && (bytes[(pos >> 3) + 1] & 0xfe) == 0xf8)) {
+                pos += 8;
+                continue;
+            }
+            const frameStart = pos;
+            try {
+                read(16);
+                const sizeCode = read(4), rateCode = read(4), assignment = read(4), sizeBits = read(3);
+                read(1);
+                // the frame or sample number, UTF-8 style
+                let lead = read(8), extra = 0;
+                while (lead & 0x80) { extra++; lead = (lead << 1) & 0xff; }
+                for (let i = 1; i < extra; i++) read(8);
+                let n = sizeCode == 1 ? 192 : sizeCode <= 5 ? 576 << (sizeCode - 2) : sizeCode == 6 ? read(8) + 1 : sizeCode == 7 ? read(16) + 1 : 256 << (sizeCode - 8);
+                if (rateCode == 12) read(8);
+                else if (rateCode == 13 || rateCode == 14) read(16);
+                if (sizeCode == 0 || rateCode == 15 || assignment > 10 || sizeBits == 3)
+                    throw new Error("bad FLAC frame header");
+                if (rateCode > 0 && rateCode < 12 && decodedFrames == 0 && !sampleRate)
+                    sampleRate = rates[rateCode];
+                read(8); // CRC-8
+                const depth = sizeBits ? sampleSizes[sizeBits] : bps;
+                const count = assignment <= 7 ? assignment + 1 : 2;
+                if (count != channelCount)
+                    throw new Error("FLAC channel count changed");
+                const data = [];
+                for (let c = 0; c < count; c++) {
+                    const out = new Float64Array(n);
+                    const side = (assignment == 8 && c == 1) || (assignment == 9 && c == 0) || (assignment == 10 && c == 1);
+                    subframe(n, depth + (side ? 1 : 0), out);
+                    data.push(out);
+                }
+                if (assignment == 8)
+                    for (let i = 0; i < n; i++) data[1][i] = data[0][i] - data[1][i];
+                else if (assignment == 9)
+                    for (let i = 0; i < n; i++) data[0][i] += data[1][i];
+                else if (assignment == 10)
+                    for (let i = 0; i < n; i++) {
+                        const side = data[1][i], mid = data[0][i] * 2 + (side & 1);
+                        data[0][i] = (mid + side) / 2;
+                        data[1][i] = (mid - side) / 2;
+                    }
+                pos = (pos + 7) & ~7;
+                read(16); // CRC-16
+                if (total)
+                    n = Math.min(n, total - decodedFrames);
+                const scale = 1 / Math.pow(2, depth - 1);
+                for (let c = 0; c < count; c++)
+                    chunks[c].push(Float32Array.from(data[c].subarray(0, n), v => v * scale));
+                decodedFrames += n;
+            }
+            catch (error) {
+                if (pos >= bytes.length * 8)
+                    break;
+                pos = frameStart + 8;
+            }
+        }
+        if (decodedFrames == 0)
+            return null;
+        const channels = chunks.map(list => {
+            const all = new Float32Array(decodedFrames);
+            let o = 0;
+            for (const chunk of list) { all.set(chunk, o); o += chunk.length; }
+            return all;
+        });
+        return { channels, sampleRate: sampleRate || 44100 };
+    }
     function flEncodeWav(channels, sampleRate) {
         const channelCount = channels.length;
         const frames = channels[0].length;
@@ -12175,11 +12369,21 @@ var beepbox = (function (exports) {
             if (!FLSampleBank._decodeContext)
                 FLSampleBank._decodeContext = new OfflineContext(1, 1, 44100);
             const copy = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-            const audioBuffer = await new Promise((resolve, reject) => {
-                const promise = FLSampleBank._decodeContext.decodeAudioData(copy, resolve, reject);
-                if (promise && promise.then)
-                    promise.then(resolve, reject);
-            });
+            let audioBuffer;
+            try {
+                audioBuffer = await new Promise((resolve, reject) => {
+                    const promise = FLSampleBank._decodeContext.decodeAudioData(copy, resolve, reject);
+                    if (promise && promise.then)
+                        promise.then(resolve, reject);
+                });
+            }
+            catch (error) {
+                // browsers without FLAC support: CarrotBox's own decoder
+                const flac = flParseFlac(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+                if (flac != null && flac.channels.length > 0 && flac.channels[0].length > 0)
+                    return flac;
+                throw error;
+            }
             const channels = [];
             for (let c = 0; c < audioBuffer.numberOfChannels; c++)
                 channels.push(audioBuffer.getChannelData(c).slice());
@@ -18526,8 +18730,8 @@ FLKitLibrary._loadPromise = null;
             blurb: "Makes a lead, bass or any part bouncy: staccato, swing, octave hops, accents, pitch scoops, bouncing-ball echoes, chops, pushes and an optional sidechain pump. Eight styles, one undo step.",
         },
         {
-            id: "audiomidi", name: "AudioMidi", kind: "tool", file: "plugins/audiomidi.js", icon: "AM", color: "#00c8ff", sizeKB: 68, experimental: true,
-            blurb: "Experimental: turns a WAV or MP3 into a song. Finds the tempo, beat and key, hears the drums, follows the bass and lead, recognizes the chords and an inner voice, and writes them as channels (with the original muted for A/B).",
+            id: "audiomidi", name: "AudioMidi", kind: "tool", file: "plugins/audiomidi.js", icon: "AM", color: "#00c8ff", sizeKB: 93,
+            blurb: "Turns a WAV, MP3, OGG or FLAC into a song: finds the tempo (even when it drifts), beat, meter and key, hears every drum hit and matches it to the closest CarrotBox drum, and writes the bass, lead and chords as notes with velocity, glides and bends (the original stays muted on its own channel for A/B).",
         },
         {
             id: "mangler", name: "Mangler FX", kind: "effect", file: "plugins/mangler.js", alt: "UGFX", icon: "Mg", color: "#f78c6c", sizeKB: 21,
@@ -39560,7 +39764,7 @@ You should be redirected to the song at:<br /><br />
             HTML, SVG, Config, FLConfig, CarrotDSP, CarrotADSR, CarrotSVF, CarrotBiquad, CarrotDelayLine, CarrotFX, CarrotUI,
             CarrotWavetable, CarrotWavetableBank, FLSampleBank, FLSoundFactory, FLKitLibrary, FLLoops, CarrotIdeaGen, CARROT_GEN_STYLES, carrotWriteNotes, carrotNormalizeNotes, flToast, flMidiName, flSetupCanvas, flCss, flResolve, flCloneJson,
             carrotFxRack, carrotWriteNotes, carrotSongScale, carrotSyncOptions, carrotSyncBeats, carrotFormatValue, carrotToNorm, carrotFromNorm,
-            CarrotWindows, CarrotPlugins, carrotNewChannel, carrotNameChannel,
+            CarrotWindows, CarrotPlugins, carrotNewChannel, carrotNameChannel, flReadDragPayload, flDragHasPayload, flDragHasFiles,
             // song editing (for tools that write into the song)
             Note, Pattern, Instrument, ChangeGroup, ChangeFL, ChangeBarCount, ChangeChannelBar, ChangeInstrumentsFlags, ChangeNoteAdded, ChangeNoteTruncate, ChangeEnsurePatternExists, ChangePatternNumbers,
             ChangeSong, ChangeTempo, ChangeKey, ChangeScale, ChangeBeatsPerBar, ChangePreset, ChangeLoop, EditorConfig, FLActions,
@@ -39582,11 +39786,18 @@ You should be redirected to the song at:<br /><br />
     // bars: array (one per bar) of note lists [{start, end, pitches, size}] in
     // parts (Config.partsPerBeat per beat). Writes into `channel` starting at
     // `startBar`, replacing what's there (options.replace) and making new
-    // patterns where needed. Returns true if anything was written.
+    // patterns where needed (options.freshPatterns: never edit a pattern other
+    // bars share). options.overlap keeps overlapping notes (real polyphony)
+    // instead of merging them into chords. Returns true if anything was written.
     // BeepBox patterns hold one note at a time (a chord is one note with several
     // pitches), sorted and never overlapping. Notes that start together become one
     // chord; a note that is still sounding when the next one starts is cut there.
-    function carrotNormalizeNotes(notes, barLength, maxPitch) {
+    // With allowOverlap, notes keep their own lengths (patterns may hold overlapping
+    // notes): only notes that start and end together become one chord, and a note is
+    // cut where the next note on the same pitch starts.
+    function carrotNormalizeNotes(notes, barLength, maxPitch, allowOverlap = false) {
+        if (allowOverlap)
+            return carrotNormalizeOverlapping(notes, barLength, maxPitch);
         const list = [];
         for (const n of notes || []) {
             if (!n || !n.pitches)
@@ -39621,6 +39832,53 @@ You should be redirected to the song at:<br /><br />
         }
         for (const n of out)
             n.pitches = Array.from(new Set(n.pitches)).sort((a, b) => a - b).slice(0, Config.maxChordSize);
+        return out;
+    }
+    function carrotNormalizeOverlapping(notes, barLength, maxPitch) {
+        const list = [];
+        for (const n of notes || []) {
+            if (!n || !n.pitches)
+                continue;
+            const start = Math.max(0, Math.min(barLength - 1, Math.round(n.start)));
+            const end = Math.max(start + 1, Math.min(barLength, Math.round(n.end)));
+            const size = n.size != undefined && isFinite(n.size) ? Math.max(0, Math.min(Config.noteSizeMax, Math.round(n.size))) : Config.noteSizeMax;
+            for (const raw of n.pitches) {
+                const pitch = Math.round(raw);
+                if (isFinite(pitch) && pitch >= 0 && pitch <= maxPitch)
+                    list.push({ start, end, pitch, size, pins: n.pins && n.pitches.length == 1 ? n.pins : null });
+            }
+        }
+        list.sort((a, b) => a.start - b.start || a.pitch - b.pitch);
+        // a note is cut where the next note on its pitch starts (they would share one key)
+        const lastOnPitch = new Map();
+        for (const n of list) {
+            const previous = lastOnPitch.get(n.pitch);
+            if (previous && previous.end > n.start) {
+                if (previous.start == n.start)
+                    n.dropped = true;
+                else {
+                    previous.end = n.start;
+                    if (previous.pins)
+                        previous.pins = previous.pins.filter(pin => pin.time <= previous.end - previous.start);
+                }
+            }
+            if (!n.dropped)
+                lastOnPitch.set(n.pitch, n);
+        }
+        // notes with the same start, end, size and no bends share one chord (up to the chord size)
+        const out = [];
+        for (const n of list) {
+            if (n.dropped)
+                continue;
+            const chord = n.pins ? null : out.find(o => o.start == n.start && o.end == n.end && o.size == n.size && !o.pins && o.pitches.length < Config.maxChordSize);
+            if (chord)
+                chord.pitches.push(n.pitch);
+            else
+                out.push({ start: n.start, end: n.end, pitches: [n.pitch], size: n.size, pins: n.pins ? n.pins.slice() : null });
+        }
+        for (const n of out)
+            n.pitches.sort((a, b) => a - b);
+        out.sort((a, b) => a.start - b.start || a.pitches[0] - b.pitches[0]);
         return out;
     }
     function carrotWriteNotes(doc, bars, options = {}) {
@@ -39666,7 +39924,7 @@ You should be redirected to the song at:<br /><br />
                 continue;
             if (replace && pattern.notes.length > 0)
                 group.append(new ChangeNoteTruncate(doc, pattern, 0, barLength));
-            for (const n of carrotNormalizeNotes(notes, barLength, maxPitch)) {
+            for (const n of carrotNormalizeNotes(notes, barLength, maxPitch, !!options.overlap)) {
                 const note = new Note(n.pitches[0], n.start, n.end, n.size, isNoise);
                 note.pitches = n.pitches;
                 if (n.pins && n.pins.length >= 2) {

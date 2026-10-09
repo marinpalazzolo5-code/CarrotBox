@@ -226,11 +226,21 @@
             if (!FLSampleBank._decodeContext)
                 FLSampleBank._decodeContext = new OfflineContext(1, 1, 44100);
             const copy = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-            const audioBuffer = await new Promise((resolve, reject) => {
-                const promise = FLSampleBank._decodeContext.decodeAudioData(copy, resolve, reject);
-                if (promise && promise.then)
-                    promise.then(resolve, reject);
-            });
+            let audioBuffer;
+            try {
+                audioBuffer = await new Promise((resolve, reject) => {
+                    const promise = FLSampleBank._decodeContext.decodeAudioData(copy, resolve, reject);
+                    if (promise && promise.then)
+                        promise.then(resolve, reject);
+                });
+            }
+            catch (error) {
+                // browsers without FLAC support: CarrotBox's own decoder
+                const flac = flParseFlac(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+                if (flac != null && flac.channels.length > 0 && flac.channels[0].length > 0)
+                    return flac;
+                throw error;
+            }
             const channels = [];
             for (let c = 0; c < audioBuffer.numberOfChannels; c++)
                 channels.push(audioBuffer.getChannelData(c).slice());
