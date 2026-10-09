@@ -173,6 +173,48 @@ function check(label, ok, detail) {
 	});
 	check("Curvebox: presets, every shaper, bands and random patches", curve.sets > 40 && curve.bad.length == 0 && curve.inert.length == 0 && Math.abs(curve.splitDb) < 0.5, JSON.stringify(curve));
 
+	// ---- SP Station: offered when an SP-404MKII appears, plays pads, patterns and every effect, locks when unplugged
+	const sp = await page.evaluate(async () => {
+		const h = beepbox.CarrotAPI.CarrotHardware.get();
+		h.editor = editor;
+		h.simulateDevice("SP-404MKII");
+		await new Promise(r => setTimeout(r, 200));
+		const offered = !!document.querySelector(".cb-sp-offer");
+		document.querySelectorAll(".cb-sp-offer").forEach(el => el.remove());
+		beepbox.CarrotAPI.CarrotHardware._offerOpen = false;
+		const plugin = await beepbox.CarrotPlugins.load("spstation");
+		const eng = plugin.engine, sr = 44100;
+		const params = eng.fill(plugin.defaultParams());
+		for (const k of Object.keys(params.pads)) beepbox.CarrotAPI.FLSampleBank.requestNow(params.pads[k].s);
+		const run = (seconds, events) => {
+			const N = Math.floor(sr * seconds), L = new Float32Array(N), R = new Float32Array(N);
+			const ctx = { sampleRate: sr, beatPos: 0, samplesPerBeat: sr / 2, bpm: 120, beatsPerBar: 4, playing: false };
+			for (let s = 0; s < N; s += 512) {
+				const e = Math.min(N, s + 512);
+				ctx.beatPos = s / ctx.samplesPerBeat;
+				for (const ev of events.filter(x => x.at >= s && x.at < e)) eng.postEvent(params, ev.ev);
+				plugin.processInstrument({}, params, L, R, s, e, ctx);
+			}
+			let peak = 0, nan = 0;
+			for (let i = 0; i < N; i++) { if (!Number.isFinite(L[i]) || !Number.isFinite(R[i])) nan++; else peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i])); }
+			return { peak, nan };
+		};
+		const pad = run(0.6, [{ at: 0, ev: { t: "on", key: "A13", vel: 120 } }]);
+		const bad = [];
+		for (let i = 0; i < plugin.effects.length; i++) {
+			params.bus[0] = { fx: i, on: 1, c: [0.6, 0.6, 0.4, 1, 1, 0] };
+			const r = run(0.5, [{ at: 0, ev: { t: "on", key: "A13", vel: 120 } }, { at: 6000, ev: { t: "on", key: "A14", vel: 100 } }]);
+			if (r.nan || r.peak > 2) bad.push(plugin.effects[i]);
+		}
+		params.bus[0].on = 0;
+		params.pat["A1"] = { len: 1, ev: [[0, 0, 13, 120, 6], [24, 0, 15, 100, 6], [48, 0, 14, 110, 6]] };
+		const pattern = run(1.6, [{ at: 0, ev: { t: "play", key: "A1", now: true } }]);
+		h.simulateDevice(null);
+		const locked = run(0.3, [{ at: 0, ev: { t: "on", key: "A13", vel: 120 } }]);
+		return { offered, pad: +pad.peak.toFixed(4), effects: plugin.effects.length, bad, pattern: +pattern.peak.toFixed(4), locked: locked.peak };
+	});
+	check("SP Station: offered on connect, pads, 44 effects, patterns, locked without the device", sp.offered && sp.pad > 0.005 && sp.effects >= 44 && sp.bad.length == 0 && sp.pattern > 0.005 && sp.locked == 0, JSON.stringify(sp));
+
 	// ---- Live Loops: a sample of loops render at two tempos with exact lengths
 	const loops = await page.evaluate(() => {
 		const L = beepbox.FLLoops, lib = L.library();

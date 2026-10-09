@@ -51,6 +51,10 @@
             blurb: "Draw the movement: 11 shapers (Time, Pitch, Filter, Liquid, Drive, Crush, Noise, Volume, Pan, Width and Reverb), each with its own curve that loops with the song or restarts on every hit, with swing, smoothing and low/mid/high band processing. 24 presets, from sidechain pumps and trance gates to tape stops and dub throws.",
         },
         {
+            id: "spstation", name: "SP Station", kind: "instrument", file: "plugins/spstation.js", alt: "SP-404MKII", icon: "SP", color: "#e34234", sizeKB: 176,
+            blurb: "The plugin for the Roland SP-404MKII (works while one is connected): a working copy of its panel with 160 pads in 10 banks, sample modes and editing, sampling, resampling and skip-back, 4 buses with 44 effects, the pattern sequencer with TR-REC, DJ mode, every SHIFT + pad function and projects. Mirrors the device's pads, banks, knobs and patterns over USB MIDI, and patterns can be written into the song.",
+        },
+        {
             id: "mangler", name: "Mangler FX", kind: "effect", file: "plugins/mangler.js", alt: "UGFX", icon: "Mg", color: "#f78c6c", sizeKB: 21,
             blurb: "Creative multi-effect rack: chain up to 8 effects (distortion, crusher, filter sweeps, chorus, phaser, flanger, delay, reverb, glitch repeats, tape stop...) with macros and presets.",
         },

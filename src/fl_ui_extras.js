@@ -2265,6 +2265,8 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
             doc.notifier.enqueueTaskToNotifyWatchers();
         });
         CarrotPlugins.loadInstalled();
+        // Look for an SP-404MKII (only when this site may already use MIDI).
+        CarrotHardware.get().watch(editor);
         // First-run welcome.
         if (!CarrotSettings.get("welcomeSeen")) {
             CarrotSettings.set("welcomeSeen", true);

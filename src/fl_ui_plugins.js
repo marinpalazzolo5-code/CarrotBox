@@ -212,6 +212,26 @@
 }
 .cb-ask input:focus { outline-color: ${ColorConfig.uiWidgetFocus}; }
 .cb-ask-buttons { display: flex; justify-content: flex-end; gap: 6px; }
+.cb-sp-offer {
+	position: fixed;
+	right: 16px;
+	bottom: 16px;
+	z-index: 96;
+	width: min(360px, calc(100vw - 32px));
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 12px 14px;
+	background: #16171a;
+	color: #f2f2f2;
+	border: 1px solid #e34234;
+	border-radius: 10px;
+	box-shadow: 0 18px 60px rgba(0,0,0,0.6);
+}
+.cb-sp-offer-title { font-weight: bold; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.cb-sp-offer-title::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: #e34234; box-shadow: 0 0 8px #e34234; }
+.cb-sp-offer-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .cb-launcher {
 	width: min(560px, calc(100vw - 32px));
 	max-height: 76vh;
@@ -2127,7 +2147,7 @@
             HTML, SVG, Config, FLConfig, CarrotDSP, CarrotADSR, CarrotSVF, CarrotBiquad, CarrotDelayLine, CarrotFX, CarrotUI,
             CarrotWavetable, CarrotWavetableBank, FLSampleBank, FLSoundFactory, FLKitLibrary, FLLoops, CarrotIdeaGen, CARROT_GEN_STYLES, carrotWriteNotes, carrotNormalizeNotes, flToast, flMidiName, flSetupCanvas, flCss, flResolve, flCloneJson,
             carrotFxRack, carrotWriteNotes, carrotSongScale, carrotSyncOptions, carrotSyncBeats, carrotFormatValue, carrotToNorm, carrotFromNorm,
-            CarrotWindows, CarrotPlugins, carrotNewChannel, carrotNameChannel, flReadDragPayload, flDragHasPayload, flDragHasFiles,
+            CarrotWindows, CarrotPlugins, carrotNewChannel, carrotNameChannel, flReadDragPayload, flDragHasPayload, flDragHasFiles, CarrotHardware, CarrotRecorder, flEncodeWav, flParseWav, CarrotKitLoader,
             // song editing (for tools that write into the song)
             Note, Pattern, Instrument, ChangeGroup, ChangeFL, ChangeBarCount, ChangeChannelBar, ChangeInstrumentsFlags, ChangeNoteAdded, ChangeNoteTruncate, ChangeEnsurePatternExists, ChangePatternNumbers,
             ChangeSong, ChangeTempo, ChangeKey, ChangeScale, ChangeBeatsPerBar, ChangePreset, ChangeLoop, EditorConfig, FLActions,

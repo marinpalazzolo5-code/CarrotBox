@@ -14,6 +14,9 @@
     const CARROT_HW_DEFAULTS = {
         inputId: "", outputId: "", profile: 0, baseNote: 36, midiChannel: -1, padsPlay: true, padLayout: 0,
         sync: 0, sendChannel: -1, sendMidiChannel: 0, sendBaseNote: 36, sendVelocity: 100,
+        // SP-404MKII: MIDI mode (0 = work it out, 1 = A: one channel per bank, 2 = B: banks A-E on
+        // channel 1 and F-J on channel 2), the device's note offset, and whether to offer SP Station
+        spMode: 0, spNoteOffset: 0, spOffer: true,
     };
     const CARROT_HW_PROFILES = [
         { name: "Roland SP-404MKII", match: /sp-?404/i, baseNote: 36, hint: "Pads 1-16 usually send notes 36-51 (C1-D#2). If yours start elsewhere, press Learn and hit pad 1." },
@@ -39,6 +42,11 @@
             this._clock = { running: false, next: 0 };
             this._follow = { times: [], running: false };
             this._seq = { lastPos: -1, cycle: 0, sent: new Set(), offs: [] };
+            // plugins that want the device's raw messages (pads with bank, knobs, pattern changes)
+            this.deviceListeners = new Set();
+            this.simulated = null;
+            this.spPanelOpen = 0;
+            this._spWasThere = false;
             this.settings = Object.assign({}, CARROT_HW_DEFAULTS);
             try {
                 const saved = JSON.parse(window.localStorage.getItem("carrot:hardware") || "null");
@@ -77,7 +85,7 @@
             try {
                 if (!this.access) {
                     this.access = await navigator.requestMIDIAccess({ sysex: false });
-                    this.access.addEventListener("statechange", () => { this._autoPick(); this.notify(); });
+                    this.access.addEventListener("statechange", () => { this._autoPick(); this._checkSp(); this.notify(); });
                 }
             }
             catch (error) {
@@ -86,6 +94,7 @@
                 return false;
             }
             this._autoPick();
+            this._checkSp();
             if (!this._timer)
                 this._timer = setInterval(() => this._tick(), 20);
             this.notify();
@@ -100,7 +109,8 @@
                 return;
             const profile = CARROT_HW_PROFILES[this.settings.profile] || CARROT_HW_PROFILES[0];
             const pick = (map, savedId) => {
-                const ports = Array.from(map.values());
+                // unplugged ports stay in the list for a while: only use connected ones
+                const ports = Array.from(map.values()).filter(p => p.state != "disconnected");
                 return ports.find(p => p.id == savedId) || ports.find(p => profile.match.test(p.name || "")) || ports.find(p => /sp-?404/i.test(p.name || "")) || ports[0] || null;
             };
             this.setInput(pick(this.access.inputs, this.settings.inputId), false);
@@ -108,11 +118,131 @@
             const name = this.input ? this.input.name : "no MIDI input";
             this.status = this.input || this.output ? "Connected: " + name + (this.output && this.output.name != name ? " / " + this.output.name : "") : "Connected to MIDI, but no device is plugged in.";
         }
+        // Is an SP-404MKII plugged in right now (its MIDI port is connected)?
+        spConnected() {
+            if (this.simulated)
+                return true;
+            if (!this.access)
+                return false;
+            const live = (map) => Array.from(map.values()).some(p => p.state != "disconnected" && /sp-?404/i.test(p.name || ""));
+            return live(this.access.inputs) || live(this.access.outputs);
+        }
+        // For tests and demos without the device: pretend one is (or isn't) connected.
+        simulateDevice(name = "SP-404MKII") {
+            this.simulated = name || null;
+            this._checkSp();
+            this.notify();
+        }
+        // At startup: if this site may already use MIDI, look for the SP-404MKII quietly and keep
+        // watching for it being plugged in. (Without that permission nothing is asked until the
+        // hardware panel or SP Station connects.)
+        async watch(editor) {
+            this.editor = editor;
+            if (!this.supported || !navigator.permissions || !navigator.permissions.query)
+                return;
+            try {
+                const status = await navigator.permissions.query({ name: "midi" });
+                if (status.state == "granted")
+                    await this.connect(editor);
+            }
+            catch (error) { }
+        }
+        _checkSp() {
+            const there = this.spConnected();
+            if (there && !this._spWasThere)
+                this._spArrived();
+            else if (!there && this._spWasThere) {
+                this._releaseHeld();
+                flToast("SP-404MKII disconnected. SP Station is locked until it's back.");
+            }
+            this._spWasThere = there;
+        }
+        _spArrived() {
+            if (!this.editor || !this.settings.spOffer || CarrotHardware._offerOpen)
+                return;
+            if (document.querySelector(".cb-window.cb-plugin-spstation"))
+                return;
+            CarrotHardware._offerOpen = true;
+            const editor = this.editor;
+            const finish = () => { CarrotHardware._offerOpen = false; card.remove(); };
+            const launch = CarrotUI.button("Open SP Station", async () => {
+                finish();
+                await CarrotHardware.openSpStation(editor);
+            }, { primary: true });
+            const later = CarrotUI.button("Not now", finish);
+            const never = CarrotUI.button("Don't ask again", () => { this.settings.spOffer = false; this.save(); finish(); flToast("You can open SP Station any time from the plugin launcher (Tab)."); });
+            const card = HTML.div({ class: "cb-sp-offer", role: "dialog" },
+                HTML.div({ class: "cb-sp-offer-title" }, "SP-404MKII connected"),
+                HTML.div({ class: "cb-hint" }, "Open SP Station, the SP-404MKII plugin? It mirrors your device: 160 pads in 10 banks, bus effects, patterns and resampling, played from the hardware or from CarrotBox."),
+                HTML.div({ class: "cb-sp-offer-buttons" }, launch, later, never));
+            for (const type of ["keydown", "keyup", "keypress"])
+                card.addEventListener(type, (event) => event.stopPropagation());
+            document.body.appendChild(card);
+        }
+        // Installs and loads SP Station on a new channel and opens it.
+        static async openSpStation(editor) {
+            try {
+                if (!CarrotPlugins.isLoaded("spstation"))
+                    await CarrotPlugins.install("spstation");
+                const doc = editor.doc;
+                // reuse a channel that already has it
+                for (let c = 0; c < doc.song.getChannelCount(); c++) {
+                    const channel = doc.song.channels[c];
+                    for (let i = 0; i < channel.instruments.length; i++) {
+                        const ins = channel.instruments[i];
+                        if (ins.type == FLConfig.typePlugin && ins.fl.plugin.id == "spstation") {
+                            CarrotWindows.open(editor, { type: "instrument", channel: c, instrument: i }, CarrotPlugins.get("spstation"));
+                            return;
+                        }
+                    }
+                }
+                carrotLoadInstrumentPlugin(editor, "spstation", true);
+                const c = doc.song.pitchChannelCount - 1;
+                if (!CarrotSettings.get("openPluginOnLoad"))
+                    CarrotWindows.open(editor, { type: "instrument", channel: c, instrument: 0 }, CarrotPlugins.get("spstation"));
+            }
+            catch (error) {
+                flToast("Couldn't open SP Station: " + (error.message || error));
+            }
+        }
+        // ---- SP-404MKII pads <-> MIDI. Mode A: bank A-J on channels 1-10, notes 36-51. Mode B: banks
+        // A-E on channel 1 and F-J on channel 2, notes 12-91 (16 per bank). Within a bank the notes rise
+        // from the bottom-left pad (13) along each row: slot 0 = pad 13 ... slot 15 = pad 4.
+        spDecode(channel, note) {
+            note -= this.settings.spNoteOffset | 0;
+            const mode = this.settings.spMode | 0;
+            const asA = () => channel <= 9 && note >= 36 && note <= 51 ? { bank: channel, slot: note - 36 } : null;
+            const asB = () => channel <= 1 && note >= 12 && note <= 91 ? { bank: channel * 5 + Math.floor((note - 12) / 16), slot: (note - 12) % 16 } : null;
+            if (mode == 1)
+                return asA();
+            if (mode == 2)
+                return asB();
+            if (channel >= 2)
+                return asA();
+            return (note >= 36 && note <= 51 ? asA() : null) || asB();
+        }
+        spEncode(bank, slot) {
+            const offset = this.settings.spNoteOffset | 0;
+            if ((this.settings.spMode | 0) == 2)
+                return { channel: bank >= 5 ? 1 : 0, note: 12 + (bank % 5) * 16 + slot + offset };
+            return { channel: bank, note: 36 + slot + offset };
+        }
+        static spPadLabel(slot) {
+            return (3 - Math.floor(slot / 4)) * 4 + (slot % 4) + 1;
+        }
+        _releaseHeld() {
+            if (!this.editor)
+                return;
+            for (const pitch of this._held.values())
+                this.editor.doc.performance.removePerformedPitch(pitch);
+            this._held.clear();
+        }
         setInput(port, remember = true) {
             if (typeof port == "string")
                 port = this.access ? this.access.inputs.get(port) : null;
             if (this.input == port)
                 return;
+            this._releaseHeld();
             if (this.input) {
                 this.input.removeEventListener("midimessage", this._onMessage);
                 window.carrotMidiClaimed && window.carrotMidiClaimed.delete(this.input.id);
@@ -164,10 +294,23 @@
                 return;
             }
             const type = status & 0xF0, channel = status & 0x0F;
+            for (const listener of this.deviceListeners) {
+                try {
+                    listener(data, event.timeStamp);
+                }
+                catch (error) { console.error(error); }
+            }
             if (type != 0x90 && type != 0x80)
                 return;
             const note = data[1], velocity = data[2] || 0;
             const on = type == 0x90 && velocity > 0;
+            // a key that is let go is always let go (even if pads stopped playing meanwhile)
+            if (!on && this._held.has(note)) {
+                if (this.editor)
+                    this.editor.doc.performance.removePerformedPitch(this._held.get(note));
+                this._held.delete(note);
+                return;
+            }
             if (this.learning && on) {
                 this.learning = false;
                 this.settings.baseNote = note;
@@ -188,19 +331,38 @@
             }
             if (!this.settings.padsPlay || !this.editor)
                 return;
-            const pitch = this._pitchFor(note, pad, isPad);
+            const doc = this.editor.doc;
+            let pitch = this._pitchFor(note, pad, isPad);
+            // SP Station on this channel: the device's bank and pad pick the sample
+            const sp = this._spTarget();
+            if (sp) {
+                // with SP Station's panel open, the panel plays the pads itself
+                if (this.spPanelOpen > 0)
+                    return;
+                const where = this.spDecode(channel, note);
+                pitch = where ? sp.plugin.padPitch(sp.params, where.bank, where.slot, doc.song.getChannelIsNoise(doc.channel)) : null;
+            }
             if (pitch == null)
                 return;
-            const doc = this.editor.doc;
             if (on) {
+                if (this._held.has(note))
+                    doc.performance.removePerformedPitch(this._held.get(note));
                 this._held.set(note, pitch);
                 doc.performance.preferLowLatency && doc.performance.preferLowLatency();
                 doc.performance.addPerformedPitch(pitch);
             }
-            else if (this._held.has(note)) {
-                doc.performance.removePerformedPitch(this._held.get(note));
-                this._held.delete(note);
-            }
+        }
+        // The SP Station instrument on the current channel, if that's what is there.
+        _spTarget() {
+            if (!this.editor)
+                return null;
+            const doc = this.editor.doc;
+            const channel = doc.song.channels[doc.channel];
+            const instrument = channel && channel.instruments[doc.getCurrentInstrument() | 0];
+            if (!instrument || instrument.type != FLConfig.typePlugin || instrument.fl.plugin.id != "spstation")
+                return null;
+            const plugin = CarrotPlugins.get("spstation");
+            return plugin && plugin.padPitch ? { plugin, params: instrument.fl.plugin.params } : null;
         }
         _pitchFor(note, pad, isPad) {
             const doc = this.editor.doc, song = doc.song;
@@ -322,6 +484,13 @@
             const loopEnd = song.loopStart + song.loopLength;
             const isDrum = song.getChannelIsNoise(ch);
             const midiCh = Math.max(0, Math.min(15, this.settings.sendMidiChannel | 0));
+            let spPads = null;
+            {
+                const ins = song.channels[ch].instruments[0];
+                const plugin = ins && ins.type == FLConfig.typePlugin && ins.fl.plugin.id == "spstation" ? CarrotPlugins.get("spstation") : null;
+                if (plugin && plugin.pitchPad)
+                    spPads = { plugin, params: ins.fl.plugin.params };
+            }
             for (let b = Math.floor(pos); b <= Math.floor(pos + horizon); b++) {
                 let bar = b, offset = 0;
                 if (bar >= loopEnd && song.loopLength > 0 && synth.loopRepeatCount != 0) {
@@ -344,12 +513,21 @@
                     const at = now + (start - pos) * barMs;
                     const offAt = at + Math.max(15, (note.end - note.start) / barParts * barMs - 5);
                     for (const pitch of note.pitches) {
-                        const midi = isDrum ? this.settings.sendBaseNote + pitch : Config.keys[song.key].basePitch + pitch;
+                        let midi = isDrum ? this.settings.sendBaseNote + pitch : Config.keys[song.key].basePitch + pitch;
+                        let sendCh = midiCh;
+                        if (spPads) {
+                            const where = spPads.plugin.pitchPad(spPads.params, pitch, isDrum);
+                            if (!where)
+                                continue;
+                            const enc = this.spEncode(where.bank, where.slot);
+                            midi = enc.note;
+                            sendCh = enc.channel;
+                        }
                         if (midi < 0 || midi > 127)
                             continue;
                         const velocity = Math.max(1, Math.min(127, Math.round(this.settings.sendVelocity * (note.pins[0].size / Config.noteSizeMax))));
-                        this.send([0x90 | midiCh, midi, velocity], at);
-                        this.send([0x80 | midiCh, midi, 0], offAt);
+                        this.send([0x90 | sendCh, midi, velocity], at);
+                        this.send([0x80 | sendCh, midi, 0], offAt);
                     }
                 });
             }
@@ -359,6 +537,11 @@
         _allNotesOff(time) {
             const midiCh = Math.max(0, Math.min(15, this.settings.sendMidiChannel | 0));
             this.send([0xB0 | midiCh, 123, 0], time);
+            // the SP-404MKII stops its samples on All Sound Off
+            if (this.spConnected())
+                for (let c = 0; c < 10; c++)
+                    if (c != midiCh)
+                        this.send([0xB0 | c, 120, 0], time);
         }
         // ------------------------------------------------------- audio & samples
         async recordAudio(editor) {
@@ -400,6 +583,7 @@
         }
     }
     CarrotHardware._instance = null;
+    CarrotHardware._offerOpen = false;
     // ------------------------------------------------------------- panel
     class CarrotHardwarePanel extends CarrotFloatingWindow {
         static open(editor) {
@@ -452,6 +636,12 @@
             const sendBase = HTML.input({ type: "number", min: "0", max: "115", value: String(st.sendBaseNote), style: "width: 56px; height: 22px;", title: "Note sent for drum row 1 (pad 1)" });
             sendBase.addEventListener("keydown", (e) => e.stopPropagation());
             sendBase.addEventListener("change", () => { st.sendBaseNote = Math.max(0, Math.min(115, +sendBase.value | 0)); save(); });
+            const spMode = CarrotUI.select({ label: "SP MIDI mode", options: ["Work it out", "A (bank per channel)", "B (A-E on ch 1, F-J on ch 2)"], value: st.spMode, title: "Match UTILITY > SYSTEM > MIDI > MIDI Mode on the SP-404MKII", onChange: (v) => { st.spMode = v; save(); } });
+            const spOffset = HTML.input({ type: "number", min: "-24", max: "24", value: String(st.spNoteOffset), style: "width: 50px; height: 22px;", title: "The SP's MIDI note offset (UTILITY > SYSTEM > MIDI), if you changed it" });
+            spOffset.addEventListener("keydown", (e) => e.stopPropagation());
+            spOffset.addEventListener("change", () => { st.spNoteOffset = Math.max(-24, Math.min(24, +spOffset.value | 0)); save(); });
+            const spOffer = CarrotUI.toggle({ label: "Offer SP Station when the SP-404MKII is plugged in", value: st.spOffer, onChange: (v) => { st.spOffer = v; save(); } });
+            const openSp = CarrotUI.button("Open SP Station", () => CarrotHardware.openSpStation(editor), { primary: true, title: "The SP-404MKII plugin (needs the device connected)" });
             const profileHint = HTML.div({ class: "cb-hint" });
             const syncHint = HTML.div({ class: "cb-hint" });
             const record = CarrotUI.button("Record the device's audio...", () => hw.recordAudio(editor), { title: "Opens the Audio Recorder with the SP-404MKII's USB audio input" });
@@ -460,6 +650,8 @@
                 CarrotUI.section("Connection", CarrotUI.row(connect, profile), statusLine, CarrotUI.row(HTML.label({ class: "cb-field" }, "Input", inputSelect), HTML.label({ class: "cb-field" }, "Output", outputSelect))),
                 CarrotUI.section("Pads into CarrotBox", HTML.div({ style: "display: flex; gap: 12px; align-items: flex-start;" }, padGrid,
                     HTML.div({ style: "flex: 1; display: flex; flex-direction: column; gap: 6px;" }, CarrotUI.row(padsPlay, layout), CarrotUI.row(learn, HTML.label({ class: "cb-field" }, "Pad 1 note", baseNote), channelSelect), profileHint))),
+                CarrotUI.section("SP-404MKII", CarrotUI.row(openSp, spMode, HTML.label({ class: "cb-field" }, "Note offset", spOffset)), spOffer,
+                    CarrotUI.hint("SP Station is a plugin that mirrors the SP-404MKII: its pads, banks, bus effects and patterns, played from the device or from CarrotBox. It only works while the device is connected.")),
                 CarrotUI.section("Tempo sync", sync, syncHint),
                 CarrotUI.section("Sequence the device from a channel", CarrotUI.row(HTML.label({ class: "cb-field" }, "Send", sendChannel), sendMidi, HTML.label({ class: "cb-field" }, "Drum row 1 note", sendBase)),
                     CarrotUI.hint("While the song plays, that channel's notes go to the device: drum rows trigger pads from the note above (row 1 = pad 1), pitched notes keep their pitch. Mute the channel here if you only want to hear the device.")),
