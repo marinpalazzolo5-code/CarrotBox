@@ -142,7 +142,7 @@ function check(label, ok, detail) {
 	});
 	check("Utawa parses English, Japanese, Spanish and Chinese lyrics",
 		lyrics.en == "h e | l ou | n ai t" && lyrics.ja == "k o | hum:n | n i | ch i | w a" && lyrics.es == "p e | rr o | k o | jr a | s o n" && lyrics.zh == "n i | h au | sh ue e", JSON.stringify(lyrics));
-	check("sound library has over 5,600 sounds", loops.sounds >= 5600, String(loops.sounds));
+	check("sound library has over 8,400 sounds", loops.sounds >= 8400, String(loops.sounds));
 	// ---- Sound Library 3 and the kit generator
 	const lib3 = await page.evaluate(() => {
 		const F = beepbox.FLSoundFactory;
@@ -164,6 +164,37 @@ function check(label, ok, detail) {
 		return result;
 	});
 	check("genre kits (breakcore, UG, drill, rock, indie, webcore, digicore...) exist and sound", lib3.kits >= 110 && lib3.missing.length == 0 && lib3.bad.length == 0 && lib3.presets >= 95, JSON.stringify(lib3));
+	// ---- Sound Library 4: synth parts in every genre folder and 75 Essentials of every sound type
+	const lib4 = await page.evaluate(() => {
+		const F = beepbox.FLSoundFactory, cat = F.getCatalog();
+		const genres = new Map(), essentials = new Map(), fresh = [];
+		const genreFolders = new Set(cat.map(x => /^((?:Packs|Genre Kits)\/[^/]+)\/(Kicks|Snares|Bass|Melodic)\//.exec(x.path)).filter(m => m && !/Essentials|Synth One-Shots/.test(m[1])).map(m => m[1]));
+		for (const x of cat) {
+			const m = /^((?:Packs|Genre Kits)\/[^/]+)\/(Plucks|Leads|Synths)\//.exec(x.path);
+			if (m && genreFolders.has(m[1])) {
+				const g = genres.get(m[1]) || { Plucks: 0, Leads: 0, Synths: 0 };
+				g[m[2]]++;
+				genres.set(m[1], g);
+				fresh.push(x.key);
+			}
+			const e = /^Packs\/Essentials\/([^/]+)\//.exec(x.path);
+			if (e) {
+				essentials.set(e[1], (essentials.get(e[1]) || 0) + 1);
+				fresh.push(x.key);
+			}
+		}
+		const thin = [...genreFolders].filter(g => { const c = genres.get(g); return !c || c.Plucks < 2 || c.Leads < 2 || c.Synths < 2; });
+		const small = [...essentials].filter(([, n]) => n < 75).map(([f]) => f);
+		const bad = [];
+		for (let i = 0; i < fresh.length; i += 29) {
+			const r = F.render(fresh[i]);
+			let peak = 0, nan = 0;
+			for (const v of r.pcm) { if (!Number.isFinite(v)) nan++; else peak = Math.max(peak, Math.abs(v)); }
+			if (nan || peak < 0.05) bad.push(fresh[i]);
+		}
+		return { genreFolders: genreFolders.size, thin, essentialTypes: essentials.size, small, rendered: Math.ceil(fresh.length / 29), bad };
+	});
+	check("every genre folder has plucks, leads and synths; Essentials has 75 of every sound type", lib4.genreFolders >= 69 && lib4.thin.length == 0 && lib4.essentialTypes >= 29 && lib4.small.length == 0 && lib4.bad.length == 0, JSON.stringify(lib4));
 
 	// ---- FL Studio interface mode turns on and off cleanly
 	const fl = await page.evaluate(async () => {

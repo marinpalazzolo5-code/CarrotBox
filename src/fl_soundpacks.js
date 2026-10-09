@@ -167,6 +167,9 @@
                 const params = Object.assign({}, voice.params, { f: (voice.params.f || 261.63) * Math.pow(2, semis / 12), len: Math.min(length + (voice.tail || 0.15), 6) });
                 if (voice.gen == "synth" && !params.decay)
                     params.len = length + 0.05;
+                // a decaying voice is inaudible after about seven time constants (-60 dB)
+                if (voice.params.decay > 0)
+                    params.len = Math.min(params.len, voice.params.decay * 7 + 0.05);
                 const rendered = FLGen[voice.gen](params, r);
                 const gain = (voice.gain || 0.5) / Math.sqrt(n.length - 1);
                 for (let i = 0; i < rendered.length && start + i < out.length; i++)

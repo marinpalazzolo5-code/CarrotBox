@@ -527,18 +527,25 @@
             let indexEnv = 1, index2Env = 1, ampEnv = 1;
             const attackTime = p.attack || 0.002;
             const modStep = f * p.ratio / FL_SR, mod2Step = f * (p.ratio2 || 0) / FL_SR, carrierStep = f / FL_SR;
+            // the parameters are read once (same arithmetic as before, just faster)
+            const peakIndex = p.index, indexFloor = p.indexFloor || 0, hasMod2 = !!p.ratio2, index2 = p.index2;
+            const attackEnd = Math.ceil(attackTime * FL_SR) + 1;
             for (let i = 0; i < out.length; i++) {
                 pm += modStep;
-                const index = p.index * indexEnv + (p.indexFloor || 0);
+                const index = peakIndex * indexEnv + indexFloor;
                 let mod = Math.sin(2 * Math.PI * pm) * index;
-                if (p.ratio2) {
+                if (hasMod2) {
                     pm2 += mod2Step;
-                    mod += Math.sin(2 * Math.PI * pm2) * p.index2 * index2Env;
+                    mod += Math.sin(2 * Math.PI * pm2) * index2 * index2Env;
                     index2Env *= index2Fall;
                 }
                 pc += carrierStep;
-                const t = i / FL_SR;
-                out[i] = Math.sin(2 * Math.PI * pc + mod) * (t < attackTime ? t / attackTime : 1) * ampEnv;
+                if (i < attackEnd) {
+                    const t = i / FL_SR;
+                    out[i] = Math.sin(2 * Math.PI * pc + mod) * (t < attackTime ? t / attackTime : 1) * ampEnv;
+                }
+                else
+                    out[i] = Math.sin(2 * Math.PI * pc + mod) * ampEnv;
                 indexEnv *= indexFall;
                 ampEnv *= ampFall;
             }

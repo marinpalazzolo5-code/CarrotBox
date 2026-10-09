@@ -1913,7 +1913,7 @@
                 items.push(Object.assign({ group: "Built in", color: "#666", key: b.name }, b));
             const tools = [
                 { icon: "Gn", name: "Melody / Rhythm Generator", sub: "Leads, hooks, harmonies, bass, chords, drums or a full beat in 21 styles", badge: "Tool", run: () => carrotOpen(this._editor, "flLeadGen") },
-                { icon: "Kt", name: "Drum Kit Generator / Loader", sub: "Generate 12-pad kits from 115 genre kits and 5,700 sounds, or load your own", badge: "Tool", run: () => carrotOpen(this._editor, "flKits") },
+                { icon: "Kt", name: "Drum Kit Generator / Loader", sub: "Generate 12-pad kits from " + FLSoundFactory.getKits().length + " genre kits and " + (Math.floor(FLSoundFactory.getCatalog().length / 100) * 100).toLocaleString("en-US") + "+ sounds, or load your own", badge: "Tool", run: () => carrotOpen(this._editor, "flKits") },
                 { icon: "Rc", name: "Audio Recorder", sub: "Record vocals or instruments with mixing effects", badge: "Tool", run: () => carrotOpen(this._editor, "flRecorder") },
                 { icon: "Br", name: "Sound Browser", sub: "Samples, kits and packs (F8)", badge: "Tool", run: () => this._editor.flShowBrowser(true) },
                 { icon: "SP", name: "SP-404MKII / MIDI Devices", sub: "USB pads, tempo sync, sequencing, audio and samples", badge: "Tool", run: () => carrotOpen(this._editor, "flHardware") },

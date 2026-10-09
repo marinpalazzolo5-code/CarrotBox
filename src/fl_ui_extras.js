@@ -504,7 +504,7 @@ html.carrot-reduce-motion *, html.carrot-reduce-motion *::before { transition: n
                     return "cymbal";
                 if (/808/.test(name) && /Bass|808s/.test(path))
                     return "low";
-                if (/\/Percussion\//.test(path) || /^Drums\/Percussion|World Percussion/.test(path))
+                if (/\/(Percussion|Rims & Snaps)\//.test(path) || /^Drums\/Percussion|World Percussion/.test(path))
                     return "perc";
                 return null;
             };
