@@ -44,6 +44,13 @@
 .cb-am-stat { padding: 6px 8px; border-radius: 8px; background: rgba(127,127,127,0.1); min-width: 0; }
 .cb-am-stat small { display: block; opacity: 0.65; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
 .cb-am-stat b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.cb-am-insts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 6px 0; }
+.cb-am-inst { padding: 6px 8px; border-radius: 8px; background: rgba(127,127,127,0.1); min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.cb-am-inst b { font-size: 12px; }
+.cb-am-inst small { opacity: 0.7; font-size: 10px; line-height: 1.3; }
+.cb-am-inst canvas { width: 100%; height: 34px; display: block; border-radius: 4px; background: rgba(0,0,0,0.35); }
+.cb-am-inst .cb-row { gap: 4px; flex-wrap: wrap; }
+.cb-am-inst .cb-button { padding: 2px 7px; font-size: 11px; }
 .cb-am-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 10px; margin: 4px 0; opacity: 0.85; }
 .cb-am-legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; background: var(--c); }
 `);
@@ -1209,6 +1216,32 @@
 			const hist = new Float64Array(12);
 			for (const n of notes) hist[n.midi % 12] += n.dur * (0.3 + n.vel) * (n.role == "bass" ? 1.5 : 1);
 			const key = detectKey(hist);
+			// The beat tracker can lock onto the off-beats (loud open hats in house music). Kicks and
+			// bass notes say where the beat is: if they sit between the beats, move the beats there.
+			{
+				const b = grid.beats;
+				const frac = (t) => {
+					let lo = 0, hi = b.length - 1;
+					if (t < b[0] || t >= b[hi]) return -1;
+					while (hi - lo > 1) { const m = (lo + hi) >> 1; if (b[m] <= t) lo = m; else hi = m; }
+					return (t - b[lo]) / (b[lo + 1] - b[lo]);
+				};
+				let on = 0, off = 0, count = 0;
+				const vote = (t, w) => { const f = frac(t); if (f < 0) return; if (f < 0.12 || f > 0.88) on += w; else if (Math.abs(f - 0.5) < 0.12) off += w; count++; };
+				// (a kick that starts with a bass note may be the bass's own attack: it does not vote)
+				const bassT = notes.filter(n => n.role == "bass").map(n => n.t);
+				for (const h of drums.hits) {
+					if (h.kind == "kick" && !bassT.some(t => Math.abs(t - h.t) < 0.04)) vote(h.t, 1);
+					else if (h.kind == "snare" || h.kind == "clap") vote(h.t, 0.7);
+				}
+				for (const t of bassT) vote(t, 0.3);
+				if (count >= 8 && off > 1.85 * on && b.length > 2) {
+					const shifted = [b[0] - (b[1] - b[0]) / 2];
+					for (let i = 0; i + 1 < b.length; i++) shifted.push((b[i] + b[i + 1]) / 2);
+					shifted.push(b[b.length - 1] + (b[b.length - 1] - b[b.length - 2]) / 2);
+					grid.beats = shifted;
+				}
+			}
 			// downbeat and meter: kicks, bass notes and chord changes on beat 1, snares on 2 and 4
 			const beats = grid.beats;
 			const near = (list, t, tol) => list.some(e => Math.abs(e - t) < tol);
@@ -1267,15 +1300,957 @@
 				const meanDur = list.reduce((s, n) => s + n.dur, 0) / list.length;
 				timbre[role] = { bright: +avg("bright").toFixed(3), pure: +avg("pure").toFixed(3), sustain: +avg("sustain").toFixed(3), meanDur: +meanDur.toFixed(3), glides: list.filter(n => n.bend).length / list.length };
 			}
+			progress(0.98, "Arranging the parts");
+			const arr = arrange({ act, frames, onsetAt, notes, hits: drums.hits, beats, startBeat, bpb, chords, duration: x.length / SR, sens: opts.notes });
+			progress(0.99, "Measuring the instruments");
+			await pause();
+			const instruments = opts.instruments === false ? {} : extractInstruments(x, notes, drums.hits, spec.tuning);
 			for (const n of notes) { n.t = +n.t.toFixed(4); n.dur = +n.dur.toFixed(4); n.vel = +n.vel.toFixed(3); delete n.bright; delete n.pure; delete n.sustain; delete n.onset; delete n._n; }
 			progress(1, "Done");
 			return {
 				version: 2, bpm: +grid.bpm.toFixed(3), bpmEstimate: +bpm0.toFixed(2), steady: grid.steady, beats: beats.map(b => +b.toFixed(4)), beatsPerBar: bpb, startBeat, startSec: +startSec.toFixed(4),
 				duration: x.length / SR, tuning: +spec.tuning.toFixed(1), key: { key: key.key, minor: key.minor, name: NAMES[key.key] + (key.minor ? " minor" : " major") },
-				notes, drums: drums.hits, drumTemplates: drums.templates, chords, timbre,
+				notes, drums: drums.hits, drumTemplates: drums.templates, chords, timbre, arr, instruments,
 			};
 		}
-		return { analyze, setPause, drumTemplateFromPcm, SR, DRUMS, version: 2 };
+		// ---------------------------------------------------------------- arrangement
+		// Turns the raw transcription into parts a musician would write: everything on the beat grid
+		// (16ths, or triplets when the music swings), one-note-at-a-time bass and lead lines chosen over
+		// the whole song (no fragments, no gaps), block chords from the harmony, and drum patterns
+		// made consistent with how they repeat.
+		function arrange(c) {
+			const { act, frames, onsetAt, hits, beats, startBeat, bpb, chords, duration } = c, sens = c.sens == undefined ? 0.5 : c.sens;
+			const LEAD_VEL = 0.7, BASS_VEL = 0.75, CH_SHORT = 3;
+			// chords are struck together: a lone note in the chord part, up where the melody plays and
+			// while the melody is silent, is a melody note
+			const notes = c.notes.map(n => Object.assign({}, n));
+			{
+				const leadN = notes.filter(n => n.role == "lead"), chordN = notes.filter(n => n.role == "chords");
+				if (leadN.length >= 8) {
+					const lp = leadN.map(n => n.midi).sort((a, b) => a - b), low = lp[Math.floor(lp.length * 0.2)];
+					for (const n of chordN) {
+						if (n.midi < low || n.dur > 0.8) continue;
+						if (chordN.some(m => m != n && Math.abs(m.t - n.t) < 0.06)) continue;
+						if (leadN.some(m => m.t < n.t + 0.05 && m.t + m.dur > n.t - 0.05)) continue;
+						n.role = "lead";
+					}
+				}
+			}
+			const A_ = act.A;
+			// ---- the grid
+			const beatAt = (t) => {
+				let lo = 0, hi = beats.length - 1;
+				if (t <= beats[0]) return (t - beats[0]) / Math.max(1e-6, beats[1] - beats[0]);
+				if (t >= beats[hi]) return hi + (t - beats[hi]) / Math.max(1e-6, beats[hi] - beats[hi - 1]);
+				while (hi - lo > 1) { const m = (lo + hi) >> 1; if (beats[m] <= t) lo = m; else hi = m; }
+				return lo + (t - beats[lo]) / Math.max(1e-6, beats[lo + 1] - beats[lo]);
+			};
+			const fits = (S) => {
+				let err = 0, w = 0, off = 0;
+				for (const n of notes) if (n.vel > 0.25) { const b = beatAt(n.t), f = b * S - Math.round(b * S); err += Math.abs(f) * n.vel; w += n.vel; }
+				for (const h of hits) { const b = beatAt(h.t), f = b * S - Math.round(b * S); err += Math.abs(f) * h.vel; w += h.vel; if (S == 3) { const q = ((Math.round(b * 3) % 3) + 3) % 3; if (q) off += h.vel; } }
+				return { err: w ? err / w / S : 0, off: w ? off / w : 0 };
+			};
+			const f4 = fits(4), f3 = fits(3);
+			const S = f3.err < f4.err * 0.75 && f3.off > 0.2 ? 3 : 4;
+			const stepT = [];
+			for (let i = 0; i + 1 < beats.length; i++) for (let k = 0; k < S; k++) stepT.push(beats[i] + (beats[i + 1] - beats[i]) * k / S);
+			stepT.push(beats[beats.length - 1]);
+			const nSteps = stepT.length - 1;
+			const stepOf = (t) => {
+				let lo = 0, hi = nSteps;
+				if (t <= stepT[0]) return 0;
+				if (t >= stepT[hi]) return hi;
+				while (hi - lo > 1) { const m = (lo + hi) >> 1; if (stepT[m] <= t) lo = m; else hi = m; }
+				return t - stepT[lo] < stepT[lo + 1] - t ? lo : lo + 1;
+			};
+			const lastStep = Math.min(nSteps, stepOf(duration) + 1);
+			// ---- evidence per step and pitch (mean activation over the step)
+			const E = new Float32Array(lastStep * NP);
+			for (let s = 0; s < lastStep; s++) {
+				const f0 = Math.max(0, Math.round(stepT[s] * FPS)), f1 = Math.max(f0 + 1, Math.min(frames, Math.round(stepT[s + 1] * FPS)));
+				for (let p = 0; p < NP; p++) {
+					let sum = 0;
+					for (let f = f0; f < f1; f++) sum += A_[f * NP + p];
+					E[s * NP + p] = sum / (f1 - f0);
+				}
+			}
+			const cover = (role) => {
+				// where the raw notes of a part are (step x pitch), and where they start
+				const m = new Float32Array(lastStep * NP), starts = new Map();
+				for (const n of notes) {
+					if (n.role != role) continue;
+					const p = n.midi - P0;
+					if (p < 0 || p >= NP) continue;
+					const s0 = stepOf(n.t), s1 = Math.max(s0 + 1, stepOf(n.t + n.dur));
+					for (let s = s0; s < Math.min(s1, lastStep); s++) m[s * NP + p] = Math.max(m[s * NP + p], 0.4 + 0.6 * n.vel);
+					starts.set(s0 * NP + p, n);
+				}
+				return { m, starts };
+			};
+			const pct = (arr, q) => { const v = Array.from(arr).filter(x => x > 0).sort((a, b) => a - b); return v.length ? v[Math.min(v.length - 1, Math.floor(q * v.length))] : 1; };
+			const chordAt = (t) => { for (const c of chords) if (t >= c.t - 0.02 && t < c.t + c.dur) return (CHORD_TYPES.find(ct => ct[0] == c.type) || CHORD_TYPES[0])[1].map(x => (c.root + x) % 12); return null; };
+			const barSteps = bpb * S, firstStep = startBeat * S;
+			// one part: the heard notes on the grid, cleaned up
+			function part(role, mono) {
+				let list = notes.filter(n => n.role == role).map(n => ({ midi: n.midi, s0: stepOf(n.t), s1: Math.max(stepOf(n.t) + 1, stepOf(n.t + n.dur)), vel: n.vel, onset: n.onset || 0, bend: n.bend, dur: n.dur }));
+				// tiny quiet notes are noise
+				list = list.filter(n => !(n.dur < Math.max(0.06, 0.45 * (stepT[1] - stepT[0])) && n.vel < 0.45));
+				if (role == "chords") {
+					// overtones of a chord note struck with it, and quiet notes outside the harmony
+					list = list.filter(n => !list.some(m => m != n && Math.abs(m.s0 - n.s0) <= 1 && [12, 19, 24].includes(n.midi - m.midi) && m.vel >= n.vel * 0.8));
+					list = list.filter(n => { const tones = chordAt(stepT[n.s0]); return !tones || tones.includes(n.midi % 12) || n.vel > 0.6; });
+				}
+				list.sort((a, b) => a.s0 - b.s0 || a.midi - b.midi);
+				if (role == "lead" && list.length >= 8) {
+					// a line that jumps an octave away from where it is playing and straight back is
+					// usually the octave of a note whose fundamental was missed: put it back
+					const ev = (n, midi) => { const p = midi - P0; if (p < 0 || p >= NP) return 0; let v = 0; for (let s = n.s0; s < Math.min(lastStep, n.s1); s++) v = Math.max(v, E[s * NP + p]); return v; };
+					const fixed = list.map((n, i) => {
+						const near = list.slice(Math.max(0, i - 8), i + 9).filter(m => m != n).map(m => m.midi).sort((a, b) => a - b);
+						const med = near[near.length >> 1];
+						for (const dir of [-12, 12]) {
+							const to = n.midi + dir;
+							if (Math.abs(n.midi - med) > 8 && Math.abs(to - med) < Math.abs(n.midi - med) - 6 && ev(n, to) >= 0.2 * ev(n, n.midi)) return Object.assign({}, n, { midi: to });
+						}
+						return n;
+					});
+					list = fixed.sort((a, b) => a.s0 - b.s0 || a.midi - b.midi);
+				}
+				// fragments of one held note (pumping, tremolo) become one note again
+				const merged = [];
+				for (const n of list) {
+					const prev = merged.filter(m => m.midi == n.midi && m.s1 >= n.s0 - 1 && m.s0 <= n.s0).pop();
+					if (prev && (n.onset < 0.3 || n.s0 < prev.s1)) { prev.s1 = Math.max(prev.s1, n.s1); prev.vel = Math.max(prev.vel, n.vel); continue; }
+					merged.push(n);
+				}
+				list = merged;
+				// confidence: what the parts sound like when they are wrong (measured on rendered songs):
+				// quiet melody notes, one-step bass blips, and short chord notes struck on their own
+				const q = 1 - 0.8 * (sens - 0.5);
+				if (role == "lead") list = list.filter(n => n.vel >= LEAD_VEL * q || n.s1 - n.s0 >= 4);
+				else if (role == "bass") list = list.filter(n => n.s1 - n.s0 > 1 || n.vel >= BASS_VEL * q);
+				else if (role == "chords") {
+					const at = new Map();
+					for (const n of list) for (const d of [-1, 0, 1]) at.set(n.s0 + d, (at.get(n.s0 + d) || 0) + 1);
+					list = list.filter(n => n.s1 - n.s0 > CH_SHORT || at.get(n.s0) >= 3 || n.vel >= 0.95);
+				}
+				// a single voice: a note ends where the next one starts; two at once keep the louder
+				if (mono) {
+					const out = [];
+					for (const n of list) {
+						const prev = out[out.length - 1];
+						if (prev && n.s0 <= prev.s0) { if (n.vel > prev.vel) out[out.length - 1] = n; continue; }
+						if (prev && prev.s1 > n.s0) prev.s1 = n.s0;
+						out.push(n);
+					}
+					list = out;
+				}
+				return list;
+			}
+			// Missed notes: music repeats, so a note heard in a bar and in the bar a phrase later is
+			// expected in the bars between too - it is added where the audio has that pitch there.
+			function complete(list, role) {
+				if (list.length < 6) return list;
+				const barOf = (s) => Math.floor((s - firstStep) / barSteps), posOf = (s) => ((s - firstStep) % barSteps + barSteps) % barSteps;
+				const bars = new Map();
+				for (const n of list) { const b = barOf(n.s0); if (!bars.has(b)) bars.set(b, new Set()); bars.get(b).add(posOf(n.s0) * 200 + n.midi); }
+				const keys = Array.from(bars.keys());
+				let best = null;
+				for (const P of [1, 2, 4, 8]) {
+					let sim = 0, cnt = 0;
+					for (const b of keys) { const o = bars.get(b + P); if (!o) continue; const a = bars.get(b); let inter = 0; for (const x of a) if (o.has(x)) inter++; sim += inter / (a.size + o.size - inter); cnt++; }
+					if (cnt >= 2 && (!best || sim / cnt > best.sim + 0.05)) best = { P, sim: sim / cnt };
+				}
+				if (!best || best.sim < 0.45) return list;
+				const norm = pct(E, 0.97) || 1;
+				const have = new Set(list.map(n => n.s0 * 200 + n.midi));
+				const added = [];
+				for (const n of list) {
+					for (const dir of [-1, 1]) {
+						const s0 = n.s0 + dir * best.P * barSteps;
+						if (s0 < 0 || s0 >= lastStep || have.has(s0 * 200 + n.midi)) continue;
+						// the other bar must be like this one, and the pitch must be sounding there
+						const a = bars.get(barOf(n.s0)), o = bars.get(barOf(s0));
+						if (!o || !a) continue;
+						let inter = 0; for (const x of a) if (o.has(x)) inter++;
+						if (inter / (a.size + o.size - inter) < 0.35) continue;
+						const p = n.midi - P0;
+						if (p < 0 || p >= NP) continue;
+						let ev = 0;
+						for (let s = s0; s < Math.min(lastStep, s0 + n.s1 - n.s0); s++) ev = Math.max(ev, E[s * NP + p]);
+						if (ev < 0.18 * norm) continue;
+						// a held note of the same pitch already covers it
+						if (list.some(m => m.midi == n.midi && m.s0 < s0 && m.s1 > s0)) continue;
+						have.add(s0 * 200 + n.midi);
+						added.push({ midi: n.midi, s0, s1: s0 + (n.s1 - n.s0), vel: n.vel * 0.9, onset: 0, filled: true });
+					}
+				}
+				return list.concat(added).sort((a, b) => a.s0 - b.s0 || a.midi - b.midi);
+			}
+			const out = (list, role) => list.filter(n => n.s1 > n.s0 && n.s0 < lastStep).map(n => ({ t: stepT[n.s0], dur: stepT[Math.min(nSteps, n.s1)] - stepT[n.s0], midi: n.midi, vel: n.vel, bend: n.bend, role, filled: n.filled }));
+			let bassL = complete(part("bass", true), "bass"), leadL = complete(part("lead", true), "lead");
+			// completing can put two bass notes on one step: keep one voice
+			const monoAgain = (list) => { const res = []; for (const n of list) { const prev = res[res.length - 1]; if (prev && n.s0 == prev.s0) { if (!n.filled && prev.filled) res[res.length - 1] = n; continue; } if (prev && prev.s1 > n.s0) prev.s1 = n.s0; res.push(n); } return res; };
+			const bass = out(monoAgain(bassL), "bass"), lead = out(monoAgain(leadL), "lead");
+			const chordNotes = out(part("chords", false), "chords");
+			// ---- drums: on the grid, one hit per drum per step, and the repeating pattern kept whole
+			const kinds = {};
+			for (const hh of hits) {
+				const s = stepOf(hh.t);
+				const list = kinds[hh.kind] || (kinds[hh.kind] = new Map());
+				const prev = list.get(s);
+				if (!prev || prev.vel < hh.vel) list.set(s, { t: stepT[s], kind: hh.kind, vel: hh.vel });
+			}
+			const drumsOut = [];
+			for (const [kind, list] of Object.entries(kinds)) {
+				const steps = Array.from(list.keys());
+				const firstBar = Math.floor((Math.min(...steps) - firstStep) / barSteps), lastBar = Math.floor((Math.max(...steps) - firstStep) / barSteps);
+				const barsN = lastBar - firstBar + 1;
+				if (barsN >= 4) {
+					const count = new Float32Array(barSteps), perBar = new Int32Array(barsN);
+					for (const s of steps) { const rel = s - firstStep, bar = Math.floor(rel / barSteps) - firstBar; count[((rel % barSteps) + barSteps) % barSteps]++; perBar[bar]++; }
+					const usual = Array.from(perBar).sort((a, b) => a - b)[barsN >> 1];
+					const vels = Array.from(list.values()).map(x => x.vel).sort((a, b) => a - b), medVel = vels[vels.length >> 1];
+					for (let b = 0; b < barsN; b++) {
+						if (perBar[b] < 0.5 * usual) continue; // a break or a fill: leave it alone
+						for (let j = 0; j < barSteps; j++) {
+							const s = firstStep + (firstBar + b) * barSteps + j;
+							if (s < 0 || s >= lastStep) continue;
+							const share = count[j] / barsN;
+							if (share >= 0.75 && !list.has(s)) list.set(s, { t: stepT[s], kind, vel: medVel, filled: true });
+							else if (share <= 0.12 && list.has(s) && list.get(s).vel < 0.6 * medVel) list.delete(s);
+						}
+					}
+				}
+				for (const v of list.values()) drumsOut.push(v);
+			}
+			drumsOut.sort((a, b) => a.t - b.t);
+			const r4 = (v) => +v.toFixed(4);
+			const clean = (list) => list.filter(n => n.dur > 0).map(n => ({ t: r4(n.t), dur: r4(n.dur), midi: n.midi, vel: +Math.min(1, n.vel).toFixed(3), role: n.role, bend: n.bend }));
+			return { grid: S, bass: clean(bass), lead: clean(lead), chords: clean(chordNotes), drums: drumsOut.map(d => ({ t: r4(d.t), kind: d.kind, vel: +d.vel.toFixed(3) })) };
+		}
+
+		// ---------------------------------------------------------------- instruments
+		// Measures how each part sounds so it can be rebuilt as a playable instrument (the Replica
+		// plugin): for pitched parts, the strength (and phase) of every harmonic over the first two
+		// seconds of a note, the level curve, release, breath/noise and vibrato; for each drum, a
+		// pitched body that sweeps and decays plus the noise in 32 bands, each with its own decay.
+		// Overlapping notes of other parts are masked out harmonic by harmonic, and many notes are
+		// combined with medians, so what remains is the instrument rather than the mix.
+		const TIMBRE_TIMES = [0.015, 0.04, 0.08, 0.14, 0.22, 0.35, 0.55, 0.85, 1.3, 2.0];
+		const TIMBRE_H = 48;
+		const wquantile = (vals, ws, q) => {
+			const idx = Array.from(vals.keys()).sort((a, b) => vals[a] - vals[b]);
+			let total = 0;
+			for (const i of idx) total += ws[i];
+			let acc = 0;
+			for (const i of idx) { acc += ws[i]; if (acc >= total * q) return vals[i]; }
+			return vals[idx[idx.length - 1]];
+		};
+		const wmedian = (vals, ws) => wquantile(vals, ws, 0.5);
+		function extractInstruments(x, notes, hits, tuning, progress) {
+			const out = {};
+			for (const role of ["bass", "lead", "chords"]) {
+				try { const t = extractTone(x, notes, role, hits, tuning); if (t) out[role] = t; }
+				catch (error) { if (typeof console != "undefined") console.warn("AudioMidi: measuring", role, error); }
+			}
+			try { const d = extractDrums(x, hits); if (d && d.pads.length) out.drums = d; }
+			catch (error) { if (typeof console != "undefined") console.warn("AudioMidi: measuring drums", error); }
+			return out;
+		}
+		function extractTone(x, notes, role, hits, tuning) {
+			const F = TIMBRE_TIMES.length, H = TIMBRE_H, nyq = SR / 2 - 300;
+			const tune = (m) => midiHz(m + tuning / 100);
+			let cands = notes.filter(n => n.role == role && n.dur >= 0.09 && n.vel >= 0.25);
+			if (cands.length < 3) return null;
+			// the clearest notes: long, loud, and not hidden under many others
+			const busy = (n) => notes.filter(o => o != n && o.t < n.t + Math.min(n.dur, 0.5) && o.t + o.dur > n.t).length;
+			cands = cands.map(n => ({ n, score: n.vel * Math.min(1, n.dur / 0.6) / (1 + 0.25 * busy(n)) })).sort((a, b) => b.score - a.score).slice(0, 64).map(c => c.n);
+			const mids = cands.map(n => n.midi).sort((a, b) => a - b);
+			const lo = mids[0], hi = mids[mids.length - 1], split = mids[mids.length >> 1];
+			const zonesN = hi - lo >= 15 && cands.filter(n => n.midi < split).length >= 6 && cands.filter(n => n.midi >= split).length >= 6 ? 2 : 1;
+			const hitTimes = hits.map(h => h.t);
+			const zones = [];
+			let relData = [];
+			for (let z = 0; z < zonesN; z++) {
+				const list = zonesN == 1 ? cands : cands.filter(n => z == 0 ? n.midi < split : n.midi >= split);
+				// measurements: per note, frame and harmonic, the level in dB and how much to trust it
+				const V = [], W = [], NOTE = [], FR = [], HA = [];
+				const phX = new Float64Array(H), phY = new Float64Array(H);
+				const noiseVals = Array.from({ length: F * 4 }, () => []);
+				const vib = [];
+				list.forEach((n, ni) => {
+					const f0n = tune(n.midi);
+					// long enough to tell the harmonics of neighbouring notes apart
+					const N = f0n < 90 ? 4096 : 2048;
+					const t = fftTables(N), binHz = SR / N;
+					for (let j = 0; j < F; j++) {
+						const T = TIMBRE_TIMES[j];
+						// the window must sit inside the note, or it hears the release too
+						if (j > 0 && T + 0.25 * N / SR > n.dur + 0.01) break;
+						const center = Math.round((n.t + Math.max(T, 0.42 * N / SR)) * SR);
+						if (center + N / 2 >= x.length) break;
+						const at = center / SR;
+						const others = notes.filter(o => o != n && o.t - 0.03 < at + 0.5 * N / SR && o.t + o.dur + 0.12 > at - 0.5 * N / SR);
+						const drumNear = hitTimes.some(h => Math.abs(h - at) < 0.5 * N / SR + 0.02);
+						frameFFT(x, center, t);
+						const re = t.re, im = t.im;
+						// re/im hold x*w (real part of the combined transform) mixed with x*dw; take the
+						// plain windowed spectrum: X = (Z[k] + conj(Z[N-k])) / 2
+						const mag = (k) => { const a = re[k] + re[N - k], b = im[k] - im[N - k]; return 0.5 * Math.hypot(a, b); };
+						const cplx = (k) => [0.5 * (re[k] + re[N - k]), 0.5 * (im[k] - im[N - k])];
+						const peakNear = (hz, width) => {
+							const k0 = Math.max(1, Math.floor((hz - width) / binHz)), k1 = Math.min(N / 2 - 2, Math.ceil((hz + width) / binHz));
+							let best = -1, bv = 0;
+							for (let k = k0; k <= k1; k++) { const v = mag(k); if (v > bv) { bv = v; best = k; } }
+							if (best < 1) return null;
+							const a = Math.log(mag(best - 1) + 1e-12), b = Math.log(bv + 1e-12), c = Math.log(mag(best + 1) + 1e-12);
+							const d = a - 2 * b + c, off = d < 0 ? Math.max(-0.5, Math.min(0.5, 0.5 * (a - c) / d)) : 0;
+							return { k: best, hz: (best + off) * binHz, amp: Math.exp(b - 0.25 * (a - c) * off) / (N * 0.25) };
+						};
+						// the note's real pitch in this frame, from its strongest low harmonics
+						let f0 = f0n, sw = 0, sf = 0;
+						for (let h = 1; h <= 4; h++) {
+							if (h * f0n > nyq) break;
+							const p = peakNear(h * f0n, Math.max(1.5 * binHz, 0.03 * h * f0n));
+							if (p) { sw += p.amp; sf += p.amp * p.hz / h; }
+						}
+						if (sw > 0) f0 = sf / sw;
+						// how close the nearest harmonic of another sounding note comes (in bins)
+						const nearest = (hz) => {
+							let best = 1e9;
+							for (const o of others) {
+								const fo = tune(o.midi), k = Math.round(hz / fo);
+								if (k >= 1) best = Math.min(best, (Math.abs(hz - k * fo) - 0.004 * hz) / binHz);
+							}
+							return best;
+						};
+						const masked = (hz) => nearest(hz) < 2;
+						let harmE = [0, 0, 0, 0], interE = [0, 0, 0, 0], clean = 0;
+						const band = (hz) => hz < 1000 ? 0 : hz < 3000 ? 1 : hz < 6000 ? 2 : 3;
+						let p1 = null;
+						for (let h = 1; h <= H; h++) {
+							const hz = h * f0;
+							if (hz > nyq) break;
+							if (masked(hz)) continue;
+							const p = peakNear(hz, Math.max(1.2 * binHz, 0.2 * f0));
+							if (!p) continue;
+							let w = drumNear ? (hz > 2000 ? 0.15 : 0.4) : 1;
+							w *= Math.min(1, n.vel + 0.2);
+							if (nearest(hz) < 4.5) w *= 0.5; // a neighbour's skirt adds to it
+							V.push(20 * Math.log10(p.amp + 1e-9)); W.push(w); NOTE.push(ni); FR.push(j); HA.push(h);
+							// phase relative to the fundamental (waveform shape), from the steady part
+							const [cr, ci] = cplx(p.k);
+							const ph = Math.atan2(ci, cr) + Math.PI * p.k;
+							if (h == 1) p1 = ph;
+							else if (p1 != null && j >= 3 && w >= 0.4) { const rel = ph - h * p1; phX[h - 1] += Math.cos(rel) * p.amp; phY[h - 1] += Math.sin(rel) * p.amp; }
+							if (h == 1) { phX[0] += p.amp; }
+							harmE[band(hz)] += p.amp * p.amp;
+							// what lies between this harmonic and the next is breath, bow or noise
+							const mid = hz + 0.5 * f0;
+							if (mid < nyq && !masked(mid) && !masked(hz + f0)) {
+								const k0 = Math.round((mid - 0.12 * f0) / binHz), k1 = Math.round((mid + 0.12 * f0) / binHz);
+								let e = 0, c = 0;
+								for (let k = Math.max(1, k0); k <= Math.min(N / 2 - 1, k1); k++) { const m = mag(k) / (N * 0.25); e += m * m; c++; }
+								if (c) { interE[band(mid)] += e / c * (f0 / binHz) / 1.5; clean++; }
+							}
+						}
+						if (!drumNear && clean >= 3) {
+							const tot = harmE.reduce((a, b) => a + b, 0) || 1e-12;
+							for (let b = 0; b < 4; b++) if (harmE[b] > 0 || interE[b] > 0) noiseVals[j * 4 + b].push(10 * Math.log10((interE[b] + 1e-12) / tot));
+						}
+					}
+					// vibrato: the pitch of a long note, wobbling around its centre
+					if (role == "lead" && n.dur >= 0.6) {
+						const N2 = 2048, t2 = fftTables(N2), binHz2 = SR / N2, curve = [];
+						const hSel = Math.max(1, Math.min(6, Math.floor(1500 / f0n)));
+						for (let tt = n.t + 0.12; tt < n.t + n.dur - 0.05 && curve.length < 160; tt += 0.02) {
+							const c = Math.round(tt * SR);
+							if (c + N2 / 2 >= x.length) break;
+							frameFFT(x, c, t2);
+							const hz = hSel * f0n, k0 = Math.max(1, Math.floor(hz * 0.96 / binHz2)), k1 = Math.ceil(hz * 1.04 / binHz2);
+							let best = k0, bv = 0;
+							for (let k = k0; k <= k1; k++) { const v = Math.hypot(t2.re[k] + t2.re[N2 - k], t2.im[k] - t2.im[N2 - k]); if (v > bv) { bv = v; best = k; } }
+							const m = (k) => Math.log(1e-12 + Math.hypot(t2.re[k] + t2.re[N2 - k], t2.im[k] - t2.im[N2 - k]));
+							const a = m(best - 1), b = m(best), cc = m(best + 1), d = a - 2 * b + cc;
+							const off = d < 0 ? Math.max(-0.5, Math.min(0.5, 0.5 * (a - cc) / d)) : 0;
+							curve.push(1200 * Math.log2((best + off) * binHz2 / hz));
+						}
+						if (curve.length >= 20) {
+							const sm = curve.map((_, i) => { let s = 0, c = 0; for (let k = Math.max(0, i - 6); k <= Math.min(curve.length - 1, i + 6); k++) { s += curve[k]; c++; } return curve[i] - s / c; });
+							let cross = 0, rms = 0;
+							for (let i = 1; i < sm.length; i++) { if ((sm[i] > 0) != (sm[i - 1] > 0)) cross++; rms += sm[i] * sm[i]; }
+							rms = Math.sqrt(rms / sm.length);
+							const rate = cross / 2 / (sm.length * 0.02);
+							if (rms > 6 && rate >= 3 && rate <= 9) vib.push({ rate, depth: rms * Math.SQRT2 });
+							else vib.push({ rate: 0, depth: 0 });
+						}
+					}
+				});
+				if (V.length < 20) continue;
+				// fit level(note) + shape(frame, harmonic) robustly: every note is louder or softer,
+				// the instrument is the same
+				const g = new Float64Array(list.length);
+				for (let i = 0; i < V.length; i++) if (HA[i] <= 3 && FR[i] <= 3) g[NOTE[i]] = Math.max(g[NOTE[i]] || -200, V[i]);
+				for (let i = 0; i < list.length; i++) if (!g[i]) g[i] = -40;
+				const S = new Float64Array(F * H).fill(NaN), SW = new Float64Array(F * H);
+				for (let iter = 0; iter < 4; iter++) {
+					const cellV = Array.from({ length: F * H }, () => []), cellW = Array.from({ length: F * H }, () => []);
+					for (let i = 0; i < V.length; i++) { const c = FR[i] * H + HA[i] - 1; cellV[c].push(V[i] - g[NOTE[i]]); cellW[c].push(W[i]); }
+					for (let c = 0; c < F * H; c++) {
+						SW[c] = cellW[c].reduce((a, b) => a + b, 0);
+						// other sounds only ever add energy, so the lower middle is the instrument itself
+						S[c] = cellV[c].length ? wquantile(cellV[c], cellW[c], 0.35) : NaN;
+					}
+					const gs = Array.from({ length: list.length }, () => []), gw = Array.from({ length: list.length }, () => []);
+					for (let i = 0; i < V.length; i++) { const c = FR[i] * H + HA[i] - 1; if (!isNaN(S[c])) { gs[NOTE[i]].push(V[i] - S[c]); gw[NOTE[i]].push(W[i]); } }
+					for (let k = 0; k < list.length; k++) if (gs[k].length) g[k] = wmedian(gs[k], gw[k]);
+				}
+				// frames: how many notes reached them
+				// how many notes were heard at each frame (a frame few notes reach says little)
+				const reachSets = Array.from({ length: F }, () => new Set());
+				for (let i = 0; i < V.length; i++) reachSets[FR[i]].add(NOTE[i]);
+				const reach = reachSets.map(r => r.size), reachMin = Math.max(2, Math.ceil(0.15 * Math.max(...reach)));
+				const levels = new Float64Array(F).fill(NaN);
+				// the level of a frame comes from the harmonics measured in most frames, so that
+				// filling in different gaps does not make one frame louder than the next
+				const seen = new Int32Array(H);
+				for (let j = 0; j < F; j++) if (reach[j] >= reachMin) for (let h = 0; h < H; h++) if (!isNaN(S[j * H + h]) && SW[j * H + h] >= 0.5) seen[h]++;
+				const validFrames = reach.filter(r => r >= reachMin).length;
+				const common = [];
+				for (let h = 0; h < H; h++) if (seen[h] >= Math.max(1, 0.6 * validFrames)) common.push(h);
+				let lastGood = -1, fullTop = -1e9;
+				for (let j = 0; j < F; j++) {
+					const row = S.subarray(j * H, j * H + H), rw = SW.subarray(j * H, j * H + H);
+					let known = 0;
+					for (let h = 0; h < H; h++) if (!isNaN(row[h]) && rw[h] >= 0.5) known++; else row[h] = NaN;
+					if (reach[j] < reachMin || known < 2) continue;
+					// fill the gaps between measured harmonics (log-linear), and above the last one with its slope
+					const idx = []; for (let h = 0; h < H; h++) if (!isNaN(row[h])) idx.push(h);
+					for (let h = 0; h < H; h++) {
+						if (!isNaN(row[h])) continue;
+						const a = idx.filter(i => i < h).pop(), b = idx.find(i => i > h);
+						if (a != undefined && b != undefined) row[h] = row[a] + (row[b] - row[a]) * (Math.log(h + 1) - Math.log(a + 1)) / (Math.log(b + 1) - Math.log(a + 1));
+					}
+					const top = idx.slice(-6);
+					let slope = -12;
+					if (top.length >= 3) {
+						let sx = 0, sy = 0, sxx = 0, sxy = 0;
+						for (const h of top) { const lx = Math.log2(h + 1); sx += lx; sy += row[h]; sxx += lx * lx; sxy += lx * row[h]; }
+						const den = top.length * sxx - sx * sx;
+						if (Math.abs(den) > 1e-9) slope = (top.length * sxy - sx * sy) / den;
+					}
+					slope = Math.max(-30, Math.min(-4, slope));
+					const last = idx[idx.length - 1];
+					for (let h = last + 1; h < H; h++) row[h] = row[last] + slope * Math.log2((h + 1) / (last + 1));
+					for (let h = 0; h < idx[0]; h++) row[h] = row[idx[0]] - 6;
+					let e = 0, ec = 0;
+					for (const h of common) ec += Math.pow(10, row[h] / 10);
+					for (let h = 0; h < H; h++) e += Math.pow(10, row[h] / 10);
+					levels[j] = 10 * Math.log10(common.length >= 2 ? ec : e);
+					fullTop = Math.max(fullTop, 10 * Math.log10(e));
+					lastGood = j;
+				}
+				if (lastGood < 0) continue;
+				// one odd frame (a hit, a missed note) is not the instrument's shape over time
+				{
+					const lv0 = Array.from(levels);
+					for (let j = 1; j < F - 1; j++) if (!isNaN(lv0[j - 1]) && !isNaN(lv0[j]) && !isNaN(lv0[j + 1])) levels[j] = [lv0[j - 1], lv0[j], lv0[j + 1]].sort((a, b) => a - b)[1];
+				}
+				// frames no note reached repeat the last one measured
+				for (let j = 0; j < F; j++) if (isNaN(levels[j])) {
+					const from = j > lastGood ? lastGood : (() => { for (let k = j + 1; k < F; k++) if (!isNaN(levels[k])) return k; return lastGood; })();
+					S.copyWithin(j * H, from * H, from * H + H);
+					levels[j] = levels[from];
+					if (j > lastGood) levels[j] = NaN;
+				}
+				const phases = new Array(H).fill(null);
+				for (let h = 0; h < H; h++) {
+					const r = Math.hypot(phX[h], phY[h]);
+					let tot = 0;
+					// how consistent the phase was: the length of the mean vector against the sum of lengths
+					for (let i = 0; i < V.length; i++) if (HA[i] == h + 1 && FR[i] >= 3) tot += Math.pow(10, V[i] / 20);
+					if (h == 0) phases[h] = 0;
+					else if (tot > 0 && r / tot > 0.45) phases[h] = Math.atan2(phY[h], phX[h]);
+				}
+				const shape = [];
+				for (let j = 0; j < F; j++) for (let h = 0; h < H; h++) shape.push(+(S[j * H + h] - (isNaN(levels[j]) ? levels[lastGood] : levels[j])).toFixed(1));
+				// a typical note's level (notes the analysis could not hear clearly do not count)
+				const heard = new Set(NOTE);
+				const gains = Array.from(g).filter((_, k) => heard.has(k)).sort((a, b) => a - b);
+				zones.push({ midi: Math.round(list.reduce((s, n) => s + n.midi, 0) / list.length), shape, phases: phases.map(p => p == null ? null : +p.toFixed(3)), levels: Array.from(levels), lastGood, notes: list.length, noiseVals, vib, loud: gains[gains.length >> 1] + fullTop });
+				relData.push(list);
+			}
+			if (!zones.length) return null;
+			// one level curve for the instrument (the zones share it)
+			const lv = new Float64Array(F);
+			for (let j = 0; j < F; j++) {
+				const vals = zones.map(z => z.levels[j]).filter(v => !isNaN(v));
+				lv[j] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : NaN;
+			}
+			let top = -1e9, lastJ = 0;
+			for (let j = 0; j < F; j++) if (!isNaN(lv[j])) { top = Math.max(top, lv[j]); lastJ = j; }
+			// after the last frame a note keeps fading at the rate it was fading
+			let tail = 0;
+			if (lastJ >= 2) tail = Math.max(-60, Math.min(0, (lv[lastJ] - lv[lastJ - 2]) / (TIMBRE_TIMES[lastJ] - TIMBRE_TIMES[lastJ - 2])));
+			for (let j = 0; j < F; j++) if (isNaN(lv[j])) lv[j] = lv[lastJ] + tail * (TIMBRE_TIMES[j] - TIMBRE_TIMES[lastJ]);
+			// release: how fast a note dies after it ends (notes with nothing after them)
+			const rel = [];
+			for (const n of relData.flat()) {
+				const after = notes.some(o => o != n && o.role == role && o.t > n.t + n.dur - 0.05 && o.t < n.t + n.dur + 0.4);
+				if (after || n.dur < 0.15 || hitTimes.some(h => h > n.t + n.dur - 0.08 && h < n.t + n.dur + 0.16)) continue;
+				const f0 = tune(n.midi), N = 2048, t = fftTables(N), binHz = SR / N;
+				const level = (sec) => {
+					const c = Math.round(sec * SR);
+					if (c + N / 2 >= x.length) return null;
+					const others = notes.filter(o => o != n && o.t < sec + 0.05 && o.t + o.dur + 0.15 > sec - 0.05);
+					frameFFT(x, c, t);
+					let e = 0, cnt = 0;
+					for (let h = 1; h <= 10 && h * f0 < 5000; h++) {
+						const hz = h * f0;
+						if (others.some(o => { const fo = tune(o.midi), k = Math.round(hz / fo); return k >= 1 && Math.abs(hz - k * fo) < 2 * binHz + 0.004 * hz; })) continue;
+						const k = Math.round(hz / binHz);
+						let m = 0;
+						for (let d = -1; d <= 1; d++) m = Math.max(m, Math.hypot(t.re[k + d] + t.re[N - k - d], t.im[k + d] - t.im[N - k - d]));
+						e += m * m; cnt++;
+					}
+					return cnt >= 2 ? 10 * Math.log10(e / cnt + 1e-20) : null;
+				};
+				const end = n.t + n.dur;
+				const a = level(end - 0.03), b = level(end + 0.1);
+				if (a == null || b == null) continue;
+				rel.push(Math.max(0.02, Math.min(2.5, 0.13 * 40 / Math.max(1, a - b))));
+			}
+			const median = (arr) => { const s = arr.slice().sort((a, b) => a - b); return s[s.length >> 1]; };
+			const noise = [];
+			for (let j = 0; j < F; j++) for (let b = 0; b < 4; b++) {
+				const vals = zones.flatMap(z => z.noiseVals[j * 4 + b]);
+				noise.push(vals.length >= 3 ? +Math.max(-60, Math.min(-8, median(vals) - 4)).toFixed(1) : -60);
+			}
+			const vibs = zones.flatMap(z => z.vib);
+			const withVib = vibs.filter(v => v.depth > 0);
+			const vibrato = withVib.length >= Math.max(2, vibs.length * 0.4) ? { rate: +median(withVib.map(v => v.rate)).toFixed(2), depth: +median(withVib.map(v => v.depth)).toFixed(1) } : { rate: 5.5, depth: 0 };
+			const roleNotes = notes.filter(n => n.role == role);
+			return {
+				kind: "tone", role, times: TIMBRE_TIMES.slice(), H,
+				levels: Array.from(lv, v => +(v - top).toFixed(1)), tail: +tail.toFixed(1),
+				// how loud a typical note is in the recording (RMS, dB), to keep the balance between parts
+				loudness: +(zones.reduce((s, z) => s + z.loud, 0) / zones.length - 3).toFixed(1),
+				release: rel.length >= 3 ? +median(rel).toFixed(3) : (role == "chords" ? 0.35 : 0.12),
+				noise, vibrato,
+				zones: zones.map(z => ({ midi: z.midi, shape: z.shape, phases: z.phases, notes: z.notes })),
+				range: [Math.min(...roleNotes.map(n => n.midi)), Math.max(...roleNotes.map(n => n.midi))],
+				glide: roleNotes.filter(n => n.bend).length / Math.max(1, roleNotes.length),
+				notes: zones.reduce((s, z) => s + z.notes, 0),
+			};
+		}
+		// 32 bands, 30 Hz .. 11 kHz, for the drum models
+		const DRUM_BANDS = 32;
+		const drumBandHz = (b) => 30 * Math.pow(11000 / 30, (b + 0.5) / DRUM_BANDS);
+		function extractDrums(x, hits) {
+			const pads = [];
+			const N = 512, t = fftTables(N), binHz = SR / N, hop = 64, LEN = 0.7, frames = Math.round(LEN * SR / hop);
+			const bandOf = new Int16Array(N / 2).fill(-1);
+			for (let k = 1; k < N / 2; k++) { const hz = k * binHz; const b = Math.floor(DRUM_BANDS * Math.log(hz / 30) / Math.log(11000 / 30)); if (b >= 0 && b < DRUM_BANDS) bandOf[k] = b; }
+			const bandEnergies = (center) => {
+				frameFFT(x, center, t);
+				const e = new Float64Array(DRUM_BANDS);
+				for (let k = 1; k < N / 2; k++) { const b = bandOf[k]; if (b < 0) continue; const a = t.re[k] + t.re[N - k], c = t.im[k] - t.im[N - k]; e[b] += 0.25 * (a * a + c * c); }
+				return e;
+			};
+			for (const kind of DRUMS) {
+				let list = hits.filter(h => h.kind == kind);
+				if (list.length < 2) continue;
+				// cleanest hits: loud, and not right after another drum
+				list = list.map(h => ({ h, score: h.vel - (hits.some(o => o != h && o.t < h.t && o.t > h.t - 0.06) ? 0.5 : 0) })).sort((a, b) => b.score - a.score).slice(0, 40).map(c => c.h);
+				const per = [];
+				for (const h of list) {
+					const s = Math.round(h.t * SR);
+					if (s + LEN * SR + N >= x.length || s < N) continue;
+					// what was already sounding just before the hit is not the drum
+					const bg = new Float64Array(DRUM_BANDS);
+					for (let k = 0; k < 4; k++) { const e = bandEnergies(s - N / 2 - k * hop - 32); for (let b = 0; b < DRUM_BANDS; b++) bg[b] += e[b] / 4; }
+					const until = hits.filter(o => o.t > h.t + 0.03).reduce((m, o) => Math.min(m, o.t), 1e9) - h.t;
+					const E = new Float64Array(frames * DRUM_BANDS).fill(NaN);
+					for (let f = 0; f < frames; f++) {
+						const sec = f * hop / SR;
+						if (sec > until + 0.01 && f > 4) break; // the next hit starts: stop listening
+						const e = bandEnergies(s + f * hop - N / 2 + N / 2 - 64);
+						for (let b = 0; b < DRUM_BANDS; b++) E[f * DRUM_BANDS + b] = Math.max(0, e[b] - bg[b]);
+					}
+					per.push(E);
+				}
+				if (per.length < 2) continue;
+				const M = new Float64Array(frames * DRUM_BANDS);
+				for (let i = 0; i < M.length; i++) {
+					const vals = per.map(E => E[i]).filter(v => !isNaN(v));
+					M[i] = vals.length >= Math.max(2, per.length * 0.3) ? vals.sort((a, b) => a - b)[vals.length >> 1] : 0;
+				}
+				// the body: a low peak that sweeps down (kicks, toms, 808s)
+				let tone = null;
+				if (/kick|tom/.test(kind)) {
+					const N2 = 1024, t2 = fftTables(N2), bin2 = SR / N2;
+					const fr = [], amp = [];
+					for (let f = 0; f < 24; f++) {
+						const freqs = [], amps = [];
+						for (const h of list) {
+							const c = Math.round(h.t * SR) + N2 / 2 - 128 + f * 128;
+							if (c + N2 / 2 >= x.length) continue;
+							frameFFT(x, c, t2);
+							let best = 0, bv = 0;
+							for (let k = Math.max(1, Math.floor(30 / bin2)); k <= Math.ceil(600 / bin2); k++) { const v = Math.hypot(t2.re[k] + t2.re[N2 - k], t2.im[k] - t2.im[N2 - k]); if (v > bv) { bv = v; best = k; } }
+							const m = (k) => Math.log(1e-12 + Math.hypot(t2.re[k] + t2.re[N2 - k], t2.im[k] - t2.im[N2 - k]));
+							const a = m(best - 1), b = m(best), cc = m(best + 1), d = a - 2 * b + cc;
+							const off = d < 0 ? Math.max(-0.5, Math.min(0.5, 0.5 * (a - cc) / d)) : 0;
+							freqs.push((best + off) * bin2); amps.push(0.5 * bv / (N2 * 0.25));
+						}
+						if (freqs.length < 2) break;
+						fr.push(freqs.sort((a, b) => a - b)[freqs.length >> 1]);
+						amp.push(amps.sort((a, b) => a - b)[amps.length >> 1]);
+					}
+					if (fr.length >= 6) {
+						const times = fr.map((_, f) => (N2 / 2 - 128 + f * 128) / SR);
+						const peakA = Math.max(...amp);
+						let endAt = amp.length - 1;
+						for (let f = amp.indexOf(peakA); f < amp.length; f++) if (amp[f] < peakA * 0.03) { endAt = f; break; }
+						const f1 = fr.slice(Math.max(1, Math.floor(endAt * 0.6)), endAt + 1).sort((a, b) => a - b)[0] || fr[fr.length - 1];
+						const fa = fr[0];
+						let tau = 0.03;
+						if (fa > f1 * 1.05) {
+							const target = f1 + (fa - f1) / Math.E;
+							for (let f = 1; f < fr.length; f++) if (fr[f] <= target) { tau = Math.max(0.004, times[f] - times[0]); break; }
+						}
+						const f0 = Math.min(Math.max(fa, f1), f1 + (fa - f1) * Math.exp(times[0] / tau), 900);
+						// decay: from the peak to -40 dB
+						let decay = times[endAt] - times[amp.indexOf(peakA)];
+						const i40 = amp.findIndex((v, i) => i > amp.indexOf(peakA) && v < peakA * 0.01);
+						if (i40 > 0) decay = times[i40] - times[amp.indexOf(peakA)];
+						else if (endAt > 2) decay = (times[endAt] - times[amp.indexOf(peakA)]) * 40 / Math.max(1, 20 * Math.log10(peakA / Math.max(1e-9, amp[endAt])));
+						tone = { f0: +f0.toFixed(1), f1: +f1.toFixed(1), sweep: +tau.toFixed(4), decay: +Math.max(0.03, Math.min(3, decay)).toFixed(3), amp: peakA };
+					}
+				}
+				// the noise: per band, its peak and how fast it fades
+				let peakE = 0, totalE = 0;
+				for (let i = 0; i < M.length; i++) peakE = Math.max(peakE, M[i]);
+				for (let f = 0; f < frames; f++) { let e = 0; for (let b = 0; b < DRUM_BANDS; b++) e += M[f * DRUM_BANDS + b]; totalE = Math.max(totalE, e); }
+				if (peakE <= 0) continue;
+				// as RMS: a band with energy E (one-sided sum of |X|^2, Hann window of N) is noise of RMS sqrt(E / (0.1875 N^2))
+				const rmsOf = (e) => Math.sqrt(e / (0.1875 * N * N));
+				const bands = [], decays = [], attacks = [];
+				let lastF = 0;
+				for (let b = 0; b < DRUM_BANDS; b++) {
+					let pk = 0, pf = 0;
+					for (let f = 0; f < frames; f++) if (M[f * DRUM_BANDS + b] > pk) { pk = M[f * DRUM_BANDS + b]; pf = f; }
+					if (tone && Math.abs(Math.log2(drumBandHz(b) / Math.max(30, tone.f1))) < 0.7) pk *= 0.35; // the body carries this band
+					bands.push(pk > 0 ? +Math.max(-70, 10 * Math.log10(pk / peakE)).toFixed(1) : -70);
+					// fade: fit the dB slope from the peak down to -30 dB
+					let end = pf;
+					for (let f = pf; f < frames; f++) { const v = M[f * DRUM_BANDS + b]; if (v < pk * 0.001) break; end = f; }
+					lastF = Math.max(lastF, end);
+					const span = (end - pf) * hop / SR;
+					const drop = 10 * Math.log10(pk / Math.max(1e-20, M[end * DRUM_BANDS + b] || pk * 0.001));
+					decays.push(+Math.max(0.005, Math.min(3, span > 0 && drop > 1 ? span * 60 / drop : 0.05)).toFixed(4));
+					attacks.push(+(pf * hop / SR).toFixed(4));
+				}
+				const toneRms = tone ? tone.amp / Math.SQRT2 : 0;
+				if (tone) { tone.level = +Math.max(-40, Math.min(24, 20 * Math.log10(Math.max(1e-9, toneRms) / rmsOf(peakE)))).toFixed(1); delete tone.amp; }
+				const level = 10 * Math.log10(rmsOf(totalE) ** 2 + toneRms * toneRms);
+				pads.push({ kind, hits: per.length, level, tone, bands, decays, attacks, length: +Math.min(LEN, Math.max(0.08, lastF * hop / SR + 0.05, tone ? tone.decay * 1.2 : 0)).toFixed(3) });
+			}
+			// loudness relative to the loudest drum
+			const top = Math.max(...pads.map(p => p.level), -200);
+			for (const p of pads) {
+				p.gain = +(p.level - top).toFixed(1);
+				delete p.level;
+			}
+			return { kind: "drums", pads, loudness: +top.toFixed(1) };
+		}
+
+
+		// ---------------------------------------------------------------- voice
+		// A hummed, sung or beatboxed recording -> notes and drum hits (Utawa's "Voice to notes").
+		// One voice sings one note at a time, so the pitch comes from a YIN tracker (sharper than the
+		// song analysis for a single voice) checked against the same spectrum the song analysis
+		// reads; onsets, drum bands and the grid work as they do for songs.
+		function yinTrack(x, frames, minHz, maxHz) {
+			const W = minHz < 70 ? 2048 : 1024, tauMax = Math.min(W >> 1, Math.ceil(SR / minHz)), tauMin = Math.max(2, Math.floor(SR / maxHz));
+			const Wi = W - tauMax, N = 2 * W, t = fftTables(N);
+			const hz = new Float32Array(frames), conf = new Float32Array(frames), rms = new Float32Array(frames);
+			const a = new Float64Array(N), aIm = new Float64Array(N), b = new Float64Array(N), bIm = new Float64Array(N);
+			const d = new Float64Array(tauMax + 2), b2 = new Float64Array(W + 1);
+			for (let f = 0; f < frames; f++) {
+				const s = f * HOP - (W >> 1);
+				let e = 0;
+				for (let i = 0; i < W; i++) { const v = s + i >= 0 && s + i < x.length ? x[s + i] : 0; b[i] = v; e += v * v; }
+				rms[f] = Math.sqrt(e / W);
+				if (rms[f] < 1e-4) continue;
+				b2[0] = 0;
+				for (let i = 0; i < W; i++) b2[i + 1] = b2[i] + b[i] * b[i];
+				// r(tau) = sum a[j] b[j + tau], a = the first Wi samples: one FFT product
+				for (let i = 0; i < N; i++) { a[i] = i < Wi ? b[i] : 0; aIm[i] = 0; bIm[i] = 0; }
+				for (let i = W; i < N; i++) b[i] = 0;
+				fft(a, aIm, t); fft(b, bIm, t);
+				for (let i = 0; i < N; i++) { const re = a[i] * b[i] + aIm[i] * bIm[i], im = a[i] * bIm[i] - aIm[i] * b[i]; a[i] = re; aIm[i] = -im; }
+				fft(a, aIm, t); // conj trick: ifft(X) = conj(fft(conj(X))) / N
+				const e1 = b2[Wi];
+				let sum = 0, best = -1, bestV = 1e9;
+				d[0] = 1;
+				for (let tau = 1; tau <= tauMax; tau++) {
+					const r = a[tau] / N;
+					const dt = Math.max(0, e1 + (b2[tau + Wi] - b2[tau]) - 2 * r);
+					sum += dt;
+					d[tau] = sum > 0 ? dt * tau / sum : 1;
+				}
+				// the first dip under the threshold (the YIN rule), else the deepest
+				for (let tau = tauMin; tau < tauMax; tau++) {
+					if (d[tau] < 0.15 && d[tau] <= d[tau - 1] && d[tau] <= d[tau + 1]) { best = tau; break; }
+					if (d[tau] < bestV) { bestV = d[tau]; }
+				}
+				if (best < 0) for (let tau = tauMin; tau < tauMax; tau++) if (d[tau] == bestV) { best = tau; break; }
+				if (best < 0 || d[best] > 0.45) continue;
+				const y0 = d[best - 1], y1 = d[best], y2 = d[best + 1], den = y0 - 2 * y1 + y2;
+				const shift = den > 0 ? Math.max(-0.5, Math.min(0.5, 0.5 * (y0 - y2) / den)) : 0;
+				hz[f] = SR / (best + shift);
+				conf[f] = 1 - y1;
+			}
+			return { hz, conf, rms };
+		}
+		// how strongly the spectrum supports a pitch (harmonic sum on the log-frequency spectrum)
+		function salience(V, f, midi) {
+			let s = 0;
+			for (let h = 1; h <= 5; h++) {
+				const bin = Math.round((midi + 12 * Math.log2(h) - M0) * BPS);
+				if (bin < 0 || bin >= NB) break;
+				s += Math.max(V[f * NB + bin], V[f * NB + Math.max(0, bin - 1)], V[f * NB + Math.min(NB - 1, bin + 1)]) * Math.pow(0.8, h - 1);
+			}
+			return s;
+		}
+		async function voice(take, options, progress = () => { }) {
+			const o = Object.assign({ mode: "melody", bpm: 120, beatsPerBar: 4, grid: 4, scale: null, sens: 0.5, align: true, offset: 0 }, options || {});
+			// a little silence in front, so a sound at the very start still has an attack to find
+			const PAD = 8 * HOP, padSec = PAD / SR;
+			const x = new Float32Array(take.length + PAD);
+			x.set(take, PAD);
+			const mode = o.mode;
+			progress(0.02, "Listening");
+			const spec = await spectra(x, (v, text) => progress(0.02 + v * 1.2, text));
+			const frames = spec.frames;
+			const O = onsetEnvelope(spec.D, frames);
+			progress(0.45, "Following the pitch");
+			await pause();
+			const wantNotes = mode != "beatbox", wantDrums = mode == "beatbox" || mode == "auto";
+			const P = yinTrack(x, frames, mode == "bass" ? 50 : 65, mode == "bass" ? 700 : 1400);
+			const rmsSorted = Array.from(P.rms).filter(v => v > 0).sort((a, b) => a - b);
+			const loud = rmsSorted.length ? rmsSorted[Math.floor(rmsSorted.length * 0.95)] : 1;
+			const floor = rmsSorted.length ? rmsSorted[Math.floor(rmsSorted.length * 0.1)] : 0;
+			const gate = Math.max(floor * 2.5, loud * (0.06 - 0.04 * o.sens));
+			// midi per frame (0 = unvoiced), checked against the spectrum for octave slips
+			const m = new Float32Array(frames);
+			for (let f = 0; f < frames; f++) {
+				if (!P.hz[f] || P.rms[f] < gate || P.conf[f] < 0.55) continue;
+				let mi = 69 + 12 * Math.log2(P.hz[f] / 440);
+				const here = salience(spec.V, f, mi), up = salience(spec.V, f, mi + 12), down = salience(spec.V, f, mi - 12);
+				if (up > here * 2.2) mi += 12;
+				else if (down > here * 1.6 && mi - 12 >= M0) mi -= 12;
+				m[f] = mi;
+			}
+			// one stray frame is not a note: median of five over voiced runs
+			const sm = new Float32Array(frames);
+			for (let f = 0; f < frames; f++) {
+				if (!m[f]) continue;
+				const w = [];
+				for (let k = -2; k <= 2; k++) if (f + k >= 0 && f + k < frames && m[f + k]) w.push(m[f + k]);
+				w.sort((a, b) => a - b);
+				sm[f] = w[w.length >> 1];
+			}
+			// the singer's own tuning (most people hum a little off A = 440)
+			let cx = 0, cy = 0;
+			for (let f = 0; f < frames; f++) if (sm[f]) { const a = 2 * Math.PI * (sm[f] - Math.round(sm[f])); cx += Math.cos(a) * P.rms[f]; cy += Math.sin(a) * P.rms[f]; }
+			let tuning = Math.atan2(cy, cx) / (2 * Math.PI);
+			if (Math.abs(tuning) < 0.12) tuning = 0;
+			const beat = 60 / Math.max(20, o.bpm);
+			const gridSteps = o.grid > 0 ? o.grid : 0, step = gridSteps ? beat / gridSteps : 0;
+			let notes = [], drums = [];
+			const onsets = percussiveOnsets(O.env, frames, o.sens);
+			const onsetSet = new Set(onsets);
+			if (wantNotes) {
+				progress(0.6, "Finding the notes");
+				// voiced runs (gaps of two frames or less are breaths inside a note)
+				const runs = [];
+				let start = -1, lastV = -10;
+				for (let f = 0; f <= frames; f++) {
+					const v = f < frames && sm[f] > 0;
+					if (v) { if (start < 0) start = f; lastV = f; }
+					else if (start >= 0 && f - lastV > 2) { runs.push([start, lastV + 1]); start = -1; }
+				}
+				for (const [r0, r1] of runs) {
+					// split where the pitch moves to a new note and stays, or where the voice re-attacks
+					let s0 = r0;
+					const cut = (at) => { if (at - s0 >= 3) notes.push({ f0: s0, f1: at }); s0 = at; };
+					for (let f = r0 + 3; f < r1 - 2; f++) {
+						// the pitch the note has settled on (not the slide into it)
+						const seg = [];
+						for (let g = Math.max(s0 + 2, f - 40); g < f; g++) if (sm[g]) seg.push(sm[g]);
+						if (seg.length < 3) continue;
+						seg.sort((a, b) => a - b);
+						const cur = seg[seg.length >> 1];
+						let moved = 0;
+						for (let k = 0; k < 4 && f + k < r1; k++) if (sm[f + k] && Math.abs(sm[f + k] - cur) > 0.75) moved++;
+						if (moved >= 4) {
+							// the new note began where the pitch left the old one, or at the dip in level between them
+							const target = (sm[f] + sm[Math.min(r1 - 1, f + 3)]) / 2;
+							let g = f;
+							while (g - 1 > s0 + 2 && sm[g - 1] && Math.abs(sm[g - 1] - cur) > 0.3 * Math.abs(target - cur)) g--;
+							let dip = g, low = P.rms[g];
+							for (let k = Math.max(s0 + 3, g - 8); k <= g; k++) if (P.rms[k] < low) { low = P.rms[k]; dip = k; }
+							cut(low < 0.8 * P.rms[g] ? dip : g);
+							f = Math.max(f, s0 + 2);
+							continue;
+						}
+						// re-attack on the same pitch: an onset with a dip in level just before
+						if ((onsetSet.has(f) || onsetSet.has(f + 1)) && f - s0 >= 6) {
+							const before = Math.min(P.rms[f - 1], P.rms[f - 2]), after = Math.max(P.rms[f + 1], P.rms[f + 2], P.rms[f + 3]);
+							if (before < 0.7 * after) cut(f);
+						}
+					}
+					cut(r1);
+				}
+				const peakRms = Math.max(1e-9, ...notes.map(n => { let p = 0; for (let f = n.f0; f < n.f1; f++) p = Math.max(p, P.rms[f]); return p; }));
+				notes = notes.map(n => {
+					// the note's pitch: the middle of it (not the scoop in or the fall out)
+					const len = n.f1 - n.f0, a = n.f0 + Math.floor(len * 0.2), b = Math.max(a + 1, n.f1 - Math.floor(len * 0.15));
+					const vals = [];
+					for (let f = a; f < b; f++) if (sm[f]) vals.push(sm[f] - tuning);
+					vals.sort((x, y) => x - y);
+					const raw = vals.length ? vals[vals.length >> 1] : 60;
+					let midi = Math.round(raw);
+					if (o.scale && o.scale.length == 12) {
+						const inScale = (k) => o.scale[((k % 12) + 12) % 12];
+						if (!inScale(midi)) {
+							const lo = midi - 1, hi = midi + 1;
+							const cand = [lo, hi].filter(inScale).sort((p, q) => Math.abs(p - raw) - Math.abs(q - raw));
+							if (cand.length && Math.abs(cand[0] - raw) < 0.85) midi = cand[0];
+						}
+					}
+					let pk = 0;
+					for (let f = n.f0; f < n.f1; f++) pk = Math.max(pk, P.rms[f]);
+					return { t: n.f0 * HOP / SR, dur: (n.f1 - n.f0) * HOP / SR, midi, vel: Math.min(1, Math.sqrt(pk / peakRms)), raw };
+				});
+				// too short to be meant
+				notes = notes.filter(n => n.dur >= Math.max(0.06, step * 0.4));
+				// one note split by a wobble becomes one again
+				const merged = [];
+				for (const n of notes) {
+					const prev = merged[merged.length - 1];
+					if (prev && prev.midi == n.midi && n.t - (prev.t + prev.dur) < 0.05 && !onsets.some(f => Math.abs(f * HOP / SR - n.t) < 0.03)) { prev.dur = n.t + n.dur - prev.t; prev.vel = Math.max(prev.vel, n.vel); continue; }
+					merged.push(n);
+				}
+				notes = merged;
+				// a hummed bass is sung an octave or two above where a bass plays
+				if (mode == "bass" && notes.length) {
+					const med = notes.map(n => n.midi).sort((a, b) => a - b)[notes.length >> 1];
+					let shift = 0;
+					while (med + shift > 47) shift -= 12;
+					for (const n of notes) n.midi += shift;
+				}
+			}
+			if (wantDrums) {
+				progress(0.75, "Hearing the beatbox");
+				// each hit: where its energy sits and how long the hiss lasts
+				const hits = [];
+				const topEnv = Math.max(1e-9, ...onsets.map(f => O.env[f]));
+				for (const f of onsets) {
+					// in "auto", a hit on a sung note is the note's start, not a drum
+					if (mode == "auto" && sm[f + 2] && P.conf[f + 2] > 0.8) continue;
+					const e = new Float64Array(DB);
+					for (let g = f; g < Math.min(frames, f + 6); g++) for (let k = 0; k < DB; k++) e[k] += spec.D[g * DB + k];
+					let tot = 0, cen = 0, low = 0, high = 0;
+					for (let k = 0; k < DB; k++) { tot += e[k]; cen += e[k] * k; if (bandEdges[k + 1] <= 250) low += e[k]; if (bandEdges[k] >= 4000) high += e[k]; }
+					if (tot <= 0) continue;
+					let hiss = 0;
+					const h0 = (() => { let s = 0; for (let k = 0; k < DB; k++) if (bandEdges[k] >= 3000) s += spec.D[f * DB + k] + (f + 1 < frames ? spec.D[(f + 1) * DB + k] : 0); return s; })();
+					for (let g = f + 2; g < Math.min(frames, f + 60); g++) { let s = 0; for (let k = 0; k < DB; k++) if (bandEdges[k] >= 3000) s += spec.D[g * DB + k]; if (s < 0.25 * h0 * 0.5) break; hiss = g - f; }
+					hits.push({ f, t: f * HOP / SR, cen: cen / tot, low: low / tot, high: high / tot, hiss: hiss * HOP / SR, vel: Math.min(1, Math.sqrt(O.env[f] / topEnv)) });
+				}
+				// a weak bump in the tail of a hit that sounds like it is that hit ringing, not a new one
+				for (let i = hits.length - 1; i > 0; i--) {
+					const h = hits[i];
+					const prev = hits.slice(0, i).reverse().find(p => h.t - p.t < 0.22 && Math.abs(p.cen - h.cen) < 6 && p.vel > h.vel);
+					if (prev && h.vel * h.vel < 0.35 * prev.vel * prev.vel) hits.splice(i, 1);
+				}
+				// group the hits by sound (whoever beatboxes has their own kick, snare and hat):
+				// k-means on where the energy sits, then name the groups from low to high
+				if (hits.length) {
+					const feat = (hh) => [hh.cen / DB * 4, hh.low * 3, hh.high * 3];
+					const sorted = hits.slice().sort((a, b) => a.cen - b.cen);
+					const k = Math.min(3, hits.length);
+					let cents = [0, Math.floor((sorted.length - 1) / 2), sorted.length - 1].slice(0, k).map(i => feat(sorted[i]));
+					let assign = new Array(hits.length).fill(0);
+					for (let it = 0; it < 12; it++) {
+						assign = hits.map(hh => { const v = feat(hh); let bi = 0, bd = 1e9; cents.forEach((c, i) => { const dd = c.reduce((s, x, j) => s + (x - v[j]) ** 2, 0); if (dd < bd) { bd = dd; bi = i; } }); return bi; });
+						cents = cents.map((c, i) => { const mem = hits.filter((_, j) => assign[j] == i); return mem.length ? c.map((_, j) => mem.reduce((s, hh) => s + feat(hh)[j], 0) / mem.length) : c; });
+					}
+					const order = cents.map((c, i) => [c[0], i]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
+					const names = order.length == 3 ? ["kick", "snare", "hat"] : order.length == 2 ? ["kick", "snare"] : ["kick"];
+					const label = {};
+					order.forEach((ci, r) => { label[ci] = names[r]; });
+					// absolute sense where groups are not clearly apart
+					for (let i = 0; i < hits.length; i++) {
+						const hh = hits[i];
+						let kind = label[assign[i]];
+						if (hh.high > 0.55 && hh.low < 0.1) kind = "hat";
+						else if (hh.low > 0.45 && hh.high < 0.15) kind = "kick";
+						if (kind == "hat" && hh.hiss > 0.16) kind = "open";
+						drums.push({ t: hh.t, kind, vel: +hh.vel.toFixed(3) });
+					}
+				}
+			}
+			// ---- onto the song's grid
+			progress(0.9, "Placing it on the beat");
+			for (const n of notes) n.t -= padSec;
+			for (const d of drums) d.t = d.t - padSec;
+			// where the bar line is in the take: given (after a count-in), or at the first sound
+			let offset = typeof o.offset == "number" ? o.offset : 0;
+			if (o.offset == "first") offset = Math.max(0, Math.min(notes.length ? notes[0].t : 1e9, drums.length ? Math.min(...drums.map(d => d.t)) : 1e9, 1e9 - 1));
+			if (offset > 1e8) offset = 0;
+			if (step && o.align) {
+				// the shift (within half a step) that puts the attacks closest to the grid
+				const times = notes.map(n => n.t).concat(drums.map(d => d.t));
+				if (times.length) {
+					let best = offset, bestErr = 1e9;
+					for (let k = -12; k <= 12; k++) {
+						const off = offset + k / 24 * step;
+						let err = 0;
+						for (const t of times) { const q = (t - off) / step; err += Math.abs(q - Math.round(q)); }
+						if (err < bestErr - 1e-9) { bestErr = err; best = off; }
+					}
+					offset = best;
+				}
+			}
+			const snap = (t) => step ? Math.max(0, Math.round((t - offset) / step)) * step : Math.max(0, t - offset);
+			for (const n of notes) { const s = snap(n.t), e = snap(n.t + n.dur); n.t = s; n.dur = Math.max(step || 0.05, e - s); }
+			for (const d of drums) d.t = snap(d.t);
+			// one voice: a note ends where the next begins; two on one step keep the louder
+			notes.sort((a, b) => a.t - b.t);
+			const mono = [];
+			for (const n of notes) {
+				const prev = mono[mono.length - 1];
+				if (prev && Math.abs(n.t - prev.t) < 1e-6) { if (n.vel > prev.vel) mono[mono.length - 1] = n; continue; }
+				if (prev && prev.t + prev.dur > n.t) prev.dur = n.t - prev.t;
+				mono.push(n);
+			}
+			notes = mono;
+			const seen = new Set();
+			drums = drums.filter(d => { const key = d.kind + "@" + d.t.toFixed(4); if (seen.has(key)) return false; seen.add(key); return true; }).sort((a, b) => a.t - b.t);
+			progress(1, "Done");
+			const pitch = Array.from(sm.subarray(8), (v) => v ? +(v - tuning).toFixed(2) : 0);
+			return {
+				notes: notes.map(n => ({ t: +n.t.toFixed(4), dur: +n.dur.toFixed(4), midi: n.midi, vel: +n.vel.toFixed(3) })), drums,
+				tuning: Math.round(tuning * 100), offset: +offset.toFixed(4), bpm: o.bpm, grid: gridSteps, duration: take.length / SR, fps: FPS, pitch,
+			};
+		}
+		return { analyze, voice, setPause, drumTemplateFromPcm, SR, DRUMS, version: 2 };
 	}
 
 	// ======================================================================= running the engine
@@ -1317,12 +2292,12 @@
 		return drumLibrary = out;
 	}
 	let workerUrl = null;
-	function runInWorker(mono, opts, progress) {
+	function runInWorker(mono, opts, progress, task = "analyze") {
 		return new Promise((resolve, reject) => {
 			if (typeof Worker == "undefined") return reject(new Error("no workers"));
 			if (!workerUrl) {
 				const src = "\"use strict\";\nconst AM = (" + amEngine.toString() + ")();\nAM.setPause(() => null);\n" +
-					"self.onmessage = async (e) => {\n  try {\n    const r = await AM.analyze(e.data.mono, e.data.opts, (v, text) => self.postMessage({ progress: v, text }));\n    self.postMessage({ result: r });\n  } catch (error) { self.postMessage({ error: String((error && error.stack) || error) }); }\n};";
+					"self.onmessage = async (e) => {\n  try {\n    const r = await AM[e.data.task || \"analyze\"](e.data.mono, e.data.opts, (v, text) => self.postMessage({ progress: v, text }));\n    self.postMessage({ result: r });\n  } catch (error) { self.postMessage({ error: String((error && error.stack) || error) }); }\n};";
 				workerUrl = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
 			}
 			let worker;
@@ -1336,7 +2311,7 @@
 			};
 			worker.onerror = (e) => { worker.terminate(); reject(new Error(e.message || "worker error")); };
 			const copy = mono.slice();
-			worker.postMessage({ mono: copy, opts }, [copy.buffer]);
+			worker.postMessage({ mono: copy, opts, task }, [copy.buffer]);
 		});
 	}
 	// mono: Float32Array at 22,050 Hz. options: notes, drums (sensitivity 0..1), bpm (0 = detect), beatsPerBar (0 = detect).
@@ -1350,6 +2325,19 @@
 		const e = engine();
 		e.setPause(() => new Promise(r => setTimeout(r, 0)));
 		return e.analyze(mono, opts, progress);
+	}
+
+	// A hummed, sung or beatboxed take (mono, 22,050 Hz) -> notes / drum hits on the song's grid.
+	// options: mode ("melody", "bass", "beatbox", "auto"), bpm, beatsPerBar, grid (steps per beat,
+	// 0 = as sung), scale (12 booleans, relative to C), sens (0..1), align, offset (seconds of the downbeat).
+	async function analyzeVoice(mono, options = {}, progress = () => { }) {
+		if (options.worker !== false) {
+			try { return await runInWorker(mono, options, progress, "voice"); }
+			catch (error) { console.warn("AudioMidi: listening on the page (" + (error.message || error) + ")"); }
+		}
+		const e = engine();
+		e.setPause(() => new Promise(r => setTimeout(r, 0)));
+		return e.voice(mono, options, progress);
 	}
 
 	// ======================================================================= audio decoding
@@ -1512,9 +2500,42 @@
 		}));
 		return true;
 	}
+	// The notes to write: "raw" = every note the analysis heard, otherwise the arrangement.
+	function noteSet(result, source) {
+		const arr = source != "raw" && source != 1 ? result.arr : null;
+		if (!arr) return { notes: result.notes, drums: result.drums };
+		return { notes: arr.bass.concat(arr.lead, arr.chords).sort((a, b) => a.t - b.t || a.midi - b.midi), drums: arr.drums };
+	}
+	// Puts a Replica (an instrument rebuilt from the recording) on a channel.
+	function setReplica(doc, channel, params) {
+		doc.record(new A.ChangeFL(doc, () => {
+			const instrument = doc.song.channels[channel].instruments[0];
+			instrument.setTypeAndReset(A.FLConfig.typePlugin, doc.song.getChannelIsNoise(channel));
+			instrument.fl.plugin.id = "replica";
+			instrument.fl.plugin.params = params;
+		}));
+	}
+	// Replica params for the parts, with volumes that keep the recording's balance.
+	function replicaParams(result, role, extra = {}) {
+		const rp = B.CarrotPlugins.get("replica");
+		const ins = result.instruments || {};
+		const m = ins[role];
+		if (!rp || !m) return null;
+		const louds = Object.values(ins).map(x => x.loudness).filter(Number.isFinite);
+		const top = louds.length ? Math.max(...louds) : 0;
+		const volume = Number.isFinite(m.loudness) ? Math.max(-18, Math.min(0, m.loudness - top)) : 0;
+		const label = role == "drums" ? "Drums" : ROLE_NAMES[role] || role;
+		return rp.fromMeasurement(m, Object.assign({ name: label + " from " + (result.fileName || "the recording"), source: result.fileName || "", volume }, extra));
+	}
 	async function writeSong(host, result, options, original) {
 		const doc = host.doc;
 		const parts = Object.assign({ drums: true, bass: true, lead: true, chords: true, original: true }, options.parts || {});
+		// rebuilt instruments need the Replica plugin (installed, so the song keeps working after a reload)
+		let rebuilt = options.sounds != "library" && result.instruments && Object.keys(result.instruments).length > 0;
+		if (rebuilt) {
+			try { await B.CarrotPlugins.install("replica"); }
+			catch (error) { console.warn("AudioMidi: Replica is not available", error); rebuilt = false; }
+		}
 		const layout = options.layout | 0;      // 0 by part, 1 everything pitched in one channel, 2 by register
 		const quantize = quantizer(options.quantize | 0);
 		if (doc.synth.playing) doc.performance.pause();
@@ -1532,9 +2553,11 @@
 		const ppb = Config.partsPerBeat, barParts = result.beatsPerBar * ppb;
 		const toParts = partsMapper(result);
 		const basePitch = Config.keys[song.key].basePitch;
+		// the clean arrangement (on the grid, one-voice lines, steady drum patterns) or every note heard
+		const { notes: allNotes, drums: allDrums } = noteSet(result, options.source);
 		let lastEnd = 0;
-		for (const n of result.notes) lastEnd = Math.max(lastEnd, toParts(n.t + n.dur));
-		for (const d of result.drums) lastEnd = Math.max(lastEnd, toParts(d.t) + ppb / 4);
+		for (const n of allNotes) lastEnd = Math.max(lastEnd, toParts(n.t + n.dur));
+		for (const d of allDrums) lastEnd = Math.max(lastEnd, toParts(d.t) + ppb / 4);
 		const bars = Math.max(1, Math.min(Config.barCountMax, Math.ceil(lastEnd / barParts)));
 		const sizeOf = (vel) => options.velocity === false ? Config.noteSizeMax : vel > 0.62 ? 3 : vel > 0.32 ? 2 : 1;
 		const toNote = (n) => {
@@ -1558,7 +2581,7 @@
 		const valid = (n) => n.pitches.every(p => p >= 0 && p <= Config.maxPitch);
 		// pitched groups
 		const groups = [];
-		const pitched = result.notes.filter(n => parts[n.role] !== false);
+		const pitched = allNotes.filter(n => parts[n.role] !== false);
 		if (layout == 1) groups.push({ name: "All notes", role: "chords", notes: pitched });
 		else if (layout == 2) {
 			groups.push({ name: "High", role: "lead", notes: pitched.filter(n => n.midi >= 72) });
@@ -1585,18 +2608,25 @@
 			const channel = take(false);
 			if (channel == null) { A.flToast("AudioMidi: no room for another channel (" + g.name + ")"); continue; }
 			A.carrotNameChannel(doc, channel, g.name + " (AudioMidi)");
-			await setSampler(doc, channel, soundFor(g.role, layout == 0 ? result.timbre[g.role] : null));
+			const rp = rebuilt ? replicaParams(result, result.instruments[g.role] ? g.role : ["chords", "lead", "bass"].find(r => result.instruments[r])) : null;
+			if (rp) setReplica(doc, channel, rp);
+			else await setSampler(doc, channel, soundFor(g.role, layout == 0 ? result.timbre[g.role] : null));
 			A.carrotWriteNotes(doc, toBars(notes, bars, barParts), { channel, startBar: 0, replace: true, freshPatterns: true, overlap: true });
 			written.push(g.name.toLowerCase() + " (" + notes.length + ")");
 		}
 		// drums: a kit built from the library sounds closest to the recording's
-		if (parts.drums && result.drums.length) {
+		if (parts.drums && allDrums.length) {
 			const channel = take(true);
 			if (channel != null) {
 				A.carrotNameChannel(doc, channel, "Drums (AudioMidi)");
-				const used = PAD_ORDER.filter(k => result.drums.some(d => d.kind == k));
+				const used = PAD_ORDER.filter(k => allDrums.some(d => d.kind == k));
 				const rows = {};
-				doc.record(new A.ChangeFL(doc, () => {
+				const kit = rebuilt && result.instruments.drums ? replicaParams(result, "drums", { kinds: used.slice(0, 12) }) : null;
+				if (kit) {
+					used.slice(0, 12).forEach((kind, i) => { rows[kind] = i; });
+					setReplica(doc, channel, kit);
+				}
+				else doc.record(new A.ChangeFL(doc, () => {
 					const instrument = doc.song.channels[channel].instruments[0];
 					instrument.setTypeAndReset(A.FLConfig.typeFPC, true);
 					const fpc = instrument.fl.fpc;
@@ -1613,9 +2643,9 @@
 					});
 					fpc.kitName = "AudioMidi kit";
 				}));
-				for (const pad of doc.song.channels[channel].instruments[0].fl.fpc.pads) if (pad.sampleId) A.FLSampleBank.request(pad.sampleId);
+				if (!kit) for (const pad of doc.song.channels[channel].instruments[0].fl.fpc.pads) if (pad.sampleId) A.FLSampleBank.request(pad.sampleId);
 				const notes = [];
-				for (const d of result.drums) {
+				for (const d of allDrums) {
 					if (rows[d.kind] == undefined) continue;
 					const start = quantize(toParts(d.t));
 					notes.push({ start, end: start + 6, pitches: [rows[d.kind]], size: sizeOf(d.vel) });
@@ -1660,13 +2690,93 @@
 		return { written, bars };
 	}
 
+	// A voice take (from analyzeVoice) into the song, starting at options.startBar:
+	//   notes -> options.channel (Utawa's own channel), or a new channel with options.sound
+	//            ("lead", "bass", "keys", "pad", "pluck", "utawa"); beatbox hits -> a new drum channel.
+	async function writeVoice(host, r, options = {}) {
+		const doc = host.doc, song = doc.song;
+		if (doc.synth.playing) doc.performance.pause();
+		const ppb = Config.partsPerBeat, barParts = song.beatsPerBar * ppb;
+		const beat = 60 / Math.max(1, r.bpm || song.tempo);
+		const startBar = Math.max(0, Math.min(Config.barCountMax - 1, options.startBar | 0));
+		const toParts = (t) => Math.round(t / beat * ppb);
+		const basePitch = Config.keys[song.key].basePitch;
+		const sizeOf = (vel) => options.velocity === false ? Config.noteSizeMax : vel > 0.62 ? 3 : vel > 0.32 ? 2 : 1;
+		let lastEnd = 0;
+		for (const n of r.notes) lastEnd = Math.max(lastEnd, toParts(n.t + n.dur));
+		for (const d of r.drums) lastEnd = Math.max(lastEnd, toParts(d.t) + ppb / 4);
+		const bars = Math.max(1, Math.min(Config.barCountMax - startBar, Math.ceil(lastEnd / barParts)));
+		const written = [];
+		if (r.notes.length) {
+			let channel = options.channel;
+			if (channel == null || options.target == "new") {
+				const added = A.carrotNewChannel(doc, false);
+				if (!added) { A.flToast("No room for another channel"); return { written, bars }; }
+				doc.record(added.group);
+				channel = added.index;
+				const sound = options.sound || "lead";
+				A.carrotNameChannel(doc, channel, (options.name || "Voice") + " (" + sound + ")");
+				if (sound == "utawa" && B.CarrotPlugins.get("utawa")) {
+					doc.record(new A.ChangeFL(doc, () => {
+						const instrument = doc.song.channels[channel].instruments[0];
+						instrument.setTypeAndReset(A.FLConfig.typePlugin, false);
+						instrument.fl.plugin.id = "utawa";
+						instrument.fl.plugin.params = B.CarrotPlugins.get("utawa").defaultParams();
+					}));
+				}
+				else {
+					const keys = { lead: "instruments/synth-leads/lead-square", bass: "instruments/bass/finger-bass", keys: "instruments/keys/rhodes", pad: "instruments/pads/pad-warm", pluck: "instruments/plucks/pluck-synth" };
+					A.FLSampleBank.request("b:" + (keys[sound] || keys.lead));
+					await A.FLSampleBank.whenReady("b:" + (keys[sound] || keys.lead));
+					await setSampler(doc, channel, keys[sound] || keys.lead);
+				}
+			}
+			// keep every note inside the channel's range
+			const fit = (pitch) => { while (pitch < 0) pitch += 12; while (pitch > Config.maxPitch) pitch -= 12; return pitch; };
+			const notes = r.notes.map(n => { const start = toParts(n.t); return { start, end: Math.max(start + 1, toParts(n.t + n.dur)), pitches: [fit(n.midi - basePitch)], size: sizeOf(n.vel) }; });
+			A.carrotWriteNotes(doc, toBars(notes, bars, barParts), { channel, startBar, replace: options.replace !== false, freshPatterns: true, overlap: false });
+			written.push(r.notes.length + " notes");
+		}
+		if (r.drums.length) {
+			const added = A.carrotNewChannel(doc, true);
+			if (added) {
+				doc.record(added.group);
+				const channel = added.index;
+				A.carrotNameChannel(doc, channel, "Beatbox (" + (options.name || "Voice") + ")");
+				const used = PAD_ORDER.filter(k => r.drums.some(d => d.kind == k));
+				const rows = {};
+				doc.record(new A.ChangeFL(doc, () => {
+					const instrument = doc.song.channels[channel].instruments[0];
+					instrument.setTypeAndReset(A.FLConfig.typeFPC, true);
+					const fpc = instrument.fl.fpc;
+					used.forEach((kind, i) => {
+						if (i >= fpc.pads.length) return;
+						const key = (DRUM_SOURCES[kind] || [])[options.kit | 0] || DRUM_SOURCES[kind][0];
+						const pad = fpc.pads[i];
+						pad.reset();
+						pad.sampleId = "b:" + key;
+						pad.name = PAD_NAMES[kind];
+						if (kind == "hat" || kind == "open") pad.cut = 1;
+						rows[kind] = i;
+					});
+					fpc.kitName = "Beatbox kit";
+				}));
+				for (const pad of doc.song.channels[channel].instruments[0].fl.fpc.pads) if (pad.sampleId) A.FLSampleBank.request(pad.sampleId);
+				const notes = r.drums.filter(d => rows[d.kind] != undefined).map(d => { const start = toParts(d.t); return { start, end: start + 6, pitches: [rows[d.kind]], size: sizeOf(d.vel) }; });
+				A.carrotWriteNotes(doc, toBars(notes, bars, barParts), { channel, startBar, replace: true, freshPatterns: true, overlap: true });
+				written.push(notes.length + " drum hits");
+			}
+		}
+		return { written, bars, startBar };
+	}
+
 	// ======================================================================= UI
 	const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 	const ROLE_COLORS = { lead: "#ff7eb6", chords: "#c3e88d", bass: "#4fc3f7" };
 	function open(host) {
 		const state = { file: null, result: null, busy: false };
 		const params = host.params();
-		const p = Object.assign({ drums: 0.5, notes: 0.5, length: 2, mode: 0, layout: 0, quantize: 0, bpm: 0, meter: 0, bends: true, velocity: true, parts: { drums: true, bass: true, lead: true, chords: true, original: true } }, params);
+		const p = Object.assign({ drums: 0.5, notes: 0.5, length: 2, mode: 0, layout: 0, quantize: 0, source: 0, sounds: 0, bpm: 0, meter: 0, bends: true, velocity: true, parts: { drums: true, bass: true, lead: true, chords: true, original: true } }, params);
 		Object.assign(params, p);
 		if (!params.parts) params.parts = p.parts;
 		if (params.parts.chords === undefined) params.parts.chords = true;
@@ -1687,6 +2797,11 @@
 		const meterSelect = CarrotUI.select({ label: "Meter", options: ["Detect", "4/4", "3/4"], value: params.meter, onChange: (v) => { params.meter = v; } });
 		const modeSelect = CarrotUI.select({ label: "Write into", options: ["New channels in this song", "A new song (replaces this one, Z undoes)"], value: params.mode, onChange: (v) => { params.mode = v; } });
 		const layoutSelect = CarrotUI.select({ label: "Channels", options: ["One per part (lead, harmony, bass)", "All notes in one channel", "By register (high, middle, low)"], value: params.layout, onChange: (v) => { params.layout = v; } });
+		const sourceSelect = CarrotUI.select({ label: "Notes", options: ["Clean arrangement (on the beat, no stray notes)", "Every note heard (raw)"], value: params.source | 0, title: "Clean: every part on the song's grid, bass and lead as single lines, missed repeats filled in and stray blips removed. Raw: everything the analysis heard, as played.", onChange: (v) => { params.source = v; if (state.result) { renderStats(); drawView(); } } });
+		const soundsSelect = CarrotUI.select({ label: "Sounds", options: ["Rebuilt from the recording (Replica)", "CarrotBox library sounds"], value: params.sounds | 0, title: "Rebuilt: each part plays on an instrument rebuilt from how it sounds in the recording (editable in Replica). Library: the closest CarrotBox sounds.", onChange: (v) => { params.sounds = v; } });
+		const instBox = HTML.div({ class: "cb-am-insts" });
+		const instSection = CarrotUI.section("Instruments heard (rebuilt, editable)", instBox);
+		instSection.style.display = "none";
 		const quantizeSelect = CarrotUI.select({ label: "Timing", options: ["Smart (snap close notes to the grid)", "Exact (as played)", "1/16 grid", "1/32 grid", "1/16 triplets"], value: params.quantize, onChange: (v) => { params.quantize = v; } });
 		const toggles = [["drums", "Drums"], ["bass", "Bass"], ["lead", "Lead"], ["chords", "Harmony"], ["original", "Original (muted)"]].map(([key, label]) =>
 			CarrotUI.toggle({ label, value: params.parts[key] !== false, onChange: (v) => { params.parts[key] = v; } }));
@@ -1747,6 +2862,8 @@
 		}
 		function afterLoad() {
 			state.result = null;
+			instBox.innerHTML = "";
+			instSection.style.display = "none";
 			writeButton.disabled = true;
 			playButton.disabled = false;
 			const m = Math.floor(state.file.seconds / 60), s = Math.round(state.file.seconds % 60);
@@ -1774,7 +2891,9 @@
 				const r = state.result;
 				const bars = Math.ceil((r.duration - r.startSec) / (60 / r.bpm * r.beatsPerBar));
 				stage.textContent = "Analyzed in " + ((performance.now() - t0) / 1000).toFixed(1) + " s." + (bars > Config.barCountMax ? " Only the first " + Config.barCountMax + " bars fit in a song." : " Check the numbers, then Write to song.");
+				state.result.fileName = state.file.name;
 				renderStats();
+				renderInstruments();
 				drawView();
 				writeButton.disabled = false;
 			}
@@ -1793,13 +2912,85 @@
 			stat("Meter", r.beatsPerBar + "/4");
 			stat("Key", r.key.name);
 			stat("Tuning", (r.tuning > 0 ? "+" : "") + r.tuning + " ct", "Offset from A = 440 Hz");
-			stat("Drum hits", String(r.drums.length), Object.entries(r.drums.reduce((m, d) => (m[d.kind] = (m[d.kind] || 0) + 1, m), {})).map(([k, v]) => k + " " + v).join(", "));
-			stat("Bass notes", String(r.notes.filter(n => n.role == "bass").length));
-			stat("Lead notes", String(r.notes.filter(n => n.role == "lead").length));
-			stat("Harmony notes", String(r.notes.filter(n => n.role == "chords").length));
-			stat("Glides", String(r.notes.filter(n => n.bend).length));
+			const set = noteSet(r, params.source);
+			stat("Drum hits", String(set.drums.length), Object.entries(set.drums.reduce((m, d) => (m[d.kind] = (m[d.kind] || 0) + 1, m), {})).map(([k, v]) => k + " " + v).join(", "));
+			stat("Bass notes", String(set.notes.filter(n => n.role == "bass").length));
+			stat("Lead notes", String(set.notes.filter(n => n.role == "lead").length));
+			stat("Harmony notes", String(set.notes.filter(n => n.role == "chords").length));
+			stat("Glides", String(set.notes.filter(n => n.bend).length));
+			if (r.arr) stat("Grid", r.arr.grid == 3 ? "Triplets" : "16ths", r.arr.grid == 3 ? "The music swings: notes are placed on a triplet grid" : "Notes are placed on a sixteenth-note grid");
 			const names = r.chords.slice(0, 8).map(c => c.name);
 			stat("Chords", names.slice(0, 4).join(" ") || "-", names.join(" "));
+		}
+		// ---- the instruments heard, rebuilt (Replica)
+		async function replica() {
+			try { return await B.CarrotPlugins.load("replica"); }
+			catch (error) { A.flToast("AudioMidi: the Replica plugin could not be loaded"); return null; }
+		}
+		function renderInstruments() {
+			instBox.innerHTML = "";
+			const r = state.result;
+			const ins = r && r.instruments || {};
+			const roles = ["lead", "chords", "bass", "drums"].filter(role => ins[role]);
+			if (!roles.length) { instSection.style.display = "none"; return; }
+			instSection.style.display = "";
+			for (const role of roles) {
+				const m = ins[role];
+				const title = role == "drums" ? "Drums" : ROLE_NAMES[role];
+				const detail = role == "drums" ? m.pads.length + " drums rebuilt: " + m.pads.map(p => p.kind).join(", ") :
+					m.notes + " notes measured" + (m.zones.length > 1 ? ", 2 key zones" : "") + (m.vibrato && m.vibrato.depth > 0 ? ", vibrato" : "") + (m.noise.some(v => v > -40) ? ", breath" : "");
+				const pic = HTML.canvas({ width: 160, height: 34 });
+				const g = pic.getContext("2d");
+				g.fillStyle = ROLE_COLORS[role] || "#ffcb6b";
+				if (role == "drums") {
+					m.pads.forEach((pad, i) => { const bw = 160 / m.pads.length; for (let b = 0; b < 32; b++) { const v = Math.max(0, 1 + pad.bands[b] / 60); g.fillRect(i * bw + b * (bw - 3) / 32, 34 - v * 30, Math.max(1, (bw - 3) / 32 - 0.3), v * 30); } });
+				}
+				else {
+					const z = m.zones[0];
+					for (let h = 0; h < 32; h++) { const v = Math.max(0, 1 + z.shape[4 * m.H + h] / 60); g.fillRect(h * 5, 34 - v * 32, 4, v * 32); }
+				}
+				const params = () => replicaParams(r, role, role == "drums" ? { kinds: m.pads.map(p => p.kind) } : {});
+				const play = CarrotUI.button("Play", async () => {
+					const rp = await replica();
+					if (!rp) return;
+					const sr = 44100, out = new Float32Array(sr * 2.4);
+					const put = (pcm, at, gain = 1) => { const o = Math.floor(at * sr); for (let i = 0; i < pcm.length && o + i < out.length; i++) out[o + i] += pcm[i] * gain; };
+					const pr = replicaParams(r, role, role == "drums" ? { kinds: m.pads.map(p => p.kind) } : {});
+					pr.volume = 0;
+					if (role == "drums") {
+						const order = ["kick", "hat", "snare", "hat", "kick", "kick", "snare", "open"];
+						order.forEach((kind, i) => { const idx = pr.pads.findIndex(pd => pd.kind == kind); if (idx >= 0) put(rp.renderNote(pr, 60, 0.2, sr, 0.9, { pad: idx }), i * 0.25); });
+					}
+					else {
+						const range = m.range || [60, 60], mid = Math.round((range[0] + range[1]) / 2);
+						const notes = role == "chords" ? [[0, [mid - 7, mid - 3, mid]], [1.2, [mid - 5, mid - 1, mid + 2]]] : [[0, [mid]], [0.4, [mid + 2]], [0.8, [mid + 4]], [1.2, [mid + 7]], [1.6, [mid]]];
+						for (const [at, pitches] of notes) for (const pi of pitches) put(rp.renderNote(pr, pi, role == "chords" ? 1 : 0.32, sr, 0.85), at, role == "chords" ? 0.5 : 1);
+					}
+					let peak = 0;
+					for (const v of out) peak = Math.max(peak, Math.abs(v));
+					if (peak > 0.95) for (let i = 0; i < out.length; i++) out[i] *= 0.95 / peak;
+					A.FLSampleBank.previewPcm(out, sr, 0, 1, 1, 0.8);
+				}, { title: "Hear the rebuilt instrument" });
+				const add = CarrotUI.button("Add to song", async () => {
+					if (!await replica()) return;
+					await B.CarrotPlugins.install("replica");
+					const doc = host.doc;
+					const added = A.carrotNewChannel(doc, role == "drums");
+					if (!added) { A.flToast("AudioMidi: no room for another channel"); return; }
+					doc.record(added.group);
+					A.carrotNameChannel(doc, added.index, title + " (Replica)");
+					setReplica(doc, added.index, params());
+					doc.selection.setChannelBar(added.index, doc.bar);
+					A.flToast("AudioMidi: " + title.toLowerCase() + " rebuilt on a new channel - open it to edit");
+				}, { title: "Put this rebuilt instrument on a new channel, ready to play and edit" });
+				const keep = CarrotUI.button("Keep", async () => {
+					const rp = await replica();
+					if (!rp) return;
+					const pr = params();
+					if (rp.library.save(pr)) A.flToast("AudioMidi: \"" + pr.name + "\" kept in My instruments (open any Replica to load it)");
+				}, { title: "Keep it in My instruments, for any song" });
+				instBox.appendChild(HTML.div({ class: "cb-am-inst" }, HTML.b(title), pic, HTML.small(detail), CarrotUI.row(play, add, keep)));
+			}
 		}
 		function drawView() {
 			const { ctx, w, h } = CarrotUI.ctx(canvas);
@@ -1835,12 +3026,13 @@
 				ctx.fillRect(Math.round(x), waveH * 2, 1, h - waveH * 2);
 			}
 			// piano roll
+			const set = noteSet(r, params.source);
 			const top = waveH * 2 + 4, bottom = h - 22;
 			let lo = 127, hi = 0;
-			for (const n of r.notes) { lo = Math.min(lo, n.midi); hi = Math.max(hi, n.midi); }
+			for (const n of set.notes) { lo = Math.min(lo, n.midi); hi = Math.max(hi, n.midi); }
 			if (hi < lo) { lo = 36; hi = 84; }
 			const rowH = (bottom - top) / Math.max(12, hi - lo + 1);
-			for (const n of r.notes) {
+			for (const n of set.notes) {
 				ctx.fillStyle = ROLE_COLORS[n.role] || "#ccc";
 				ctx.globalAlpha = 0.45 + 0.55 * n.vel;
 				const x = secX(n.t), x2 = secX(n.t + n.dur);
@@ -1850,7 +3042,7 @@
 			// drum lanes
 			const lanes = ["kick", "snare", "clap", "hat", "open", "tomLow", "tomMid", "tomHigh", "rim", "crash", "ride"];
 			ctx.fillStyle = "#ffcb6b";
-			for (const d of r.drums) {
+			for (const d of set.drums) {
 				const lane = lanes.indexOf(d.kind);
 				ctx.globalAlpha = 0.4 + 0.6 * d.vel;
 				ctx.fillRect(secX(d.t), h - 3 - (lane >= 0 ? lane : 0) * 1.7, 1.5, 1.6);
@@ -1862,7 +3054,7 @@
 			state.busy = true;
 			writeButton.disabled = true;
 			try {
-				const { written, bars } = await writeSong(host, state.result, { parts: params.parts, mode: params.mode == 1 ? "new" : "add", layout: params.layout, quantize: params.quantize, bends: params.bends, velocity: params.velocity }, params.parts.original && state.file.bytes ? state.file : null);
+				const { written, bars } = await writeSong(host, state.result, { parts: params.parts, mode: params.mode == 1 ? "new" : "add", layout: params.layout, quantize: params.quantize, source: params.source == 1 ? "raw" : "clean", sounds: params.sounds == 1 ? "library" : "rebuilt", bends: params.bends, velocity: params.velocity }, params.parts.original && state.file.bytes ? state.file : null);
 				stage.textContent = written.length ? "Wrote " + written.join(", ") + " over " + bars + " bars at " + Math.round(state.result.bpm) + " BPM in " + state.result.key.name + ". Z undoes." : "Nothing to write: no notes were found.";
 				A.flToast("AudioMidi: song written");
 			}
@@ -1874,12 +3066,12 @@
 			writeButton.disabled = false;
 		}
 		const root = HTML.div(
-			CarrotUI.hint("AudioMidi listens to a recording and writes it as notes: every note of the harmony with its own timing, the bass and lead lines with their glides, and eleven kinds of drum hits, following the song's beat. The sounds are CarrotBox's own. Clear mixes give the closest copy."),
+			CarrotUI.hint("AudioMidi listens to a recording and writes it as a song: the bass, lead and harmony on the song's beat grid (with glides), eleven kinds of drum hits, and the instruments themselves, rebuilt from how they sound in the recording (Replica) so they can be played and edited. Clear mixes give the closest copy."),
 			HTML.div({ style: "height: 8px;" }), drop, fileInput, info,
 			CarrotUI.section("Listen for", HTML.div({ class: "cb-row cb-center" }, ...toggles)),
 			CarrotUI.section("Analysis", HTML.div({ class: "cb-row cb-center" }, drumsKnob, notesKnob, lengthSelect, HTML.label({ class: "cb-field" }, "Tempo (BPM)", bpmInput), meterSelect)),
-			CarrotUI.section("Writing", HTML.div({ class: "cb-row cb-center" }, modeSelect, layoutSelect, quantizeSelect, bendToggle, velocityToggle)),
-			bar, stage, stats, legend, canvas,
+			CarrotUI.section("Writing", HTML.div({ class: "cb-row cb-center" }, modeSelect, sourceSelect, soundsSelect, layoutSelect, quantizeSelect, bendToggle, velocityToggle)),
+			bar, stage, stats, instSection, legend, canvas,
 			HTML.div({ class: "cb-row", style: "justify-content: flex-end; margin-top: 8px; gap: 6px;" }, playButton, stopButton, analyzeButton, writeButton));
 		setTimeout(drawView, 0);
 		return root;
@@ -1891,6 +3083,6 @@
 		defaultParams: () => ({}),
 		open,
 		// exposed for tests and other tools
-		analyze, decodeFile, writeSong, toRate, SR, engine: amEngine, drumTemplates: () => libraryDrumTemplates().templates, drumSources: DRUM_SOURCES,
+		analyze, analyzeVoice, writeVoice, decodeFile, writeSong, toRate, SR, engine: amEngine, drumTemplates: () => libraryDrumTemplates().templates, drumSources: DRUM_SOURCES,
 	});
 })();

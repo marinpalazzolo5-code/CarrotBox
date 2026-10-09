@@ -1357,6 +1357,9 @@
             y = Math.max(0, Math.min(window.innerHeight - 30, y));
             this.container.style.left = x + "px";
             this.container.style.top = y + "px";
+            // never taller than the space below the title bar: the body scrolls instead of running off screen
+            if (!this.modal)
+                this.container.style.maxHeight = Math.max(220, window.innerHeight - y - 8) + "px";
         }
         _place() {
             let pos = null;

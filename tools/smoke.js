@@ -47,7 +47,7 @@ function check(label, ok, detail) {
 		await page.keyboard.press("Enter");
 		await page.waitForTimeout(500);
 	};
-	for (const query of ["swarm", "prism", "seedling", "chop", "sketch", "mangler", "utawa", "live loops", "bouncify", "sp-404", "audiomidi", "curvebox", "synth vault"]) {
+	for (const query of ["swarm", "prism", "seedling", "chop", "sketch", "mangler", "utawa", "live loops", "bouncify", "sp-404", "audiomidi", "curvebox", "synth vault", "replica"]) {
 		await launch(query);
 		const opened = await count();
 		await page.locator(".cb-window .cb-window-title button[title^='Close']").first().click();
@@ -80,7 +80,7 @@ function check(label, ok, detail) {
 		pattern.notes.length = 0;
 		for (let i = 0; i < 4; i++) pattern.notes.push(new beepbox.Note(12 + i * 3, i * ppb, i * ppb + ppb, 3, false));
 		const results = {};
-		for (const id of ["swarm", "prism", "seedling", "chopshop", "utawa", "synthvault"]) {
+		for (const id of ["swarm", "prism", "seedling", "chopshop", "utawa", "synthvault", "replica"]) {
 			const plugin = beepbox.CarrotPlugins.get(id);
 			if (!plugin) { results[id] = "not registered"; continue; }
 			const presets = typeof plugin.presets == "function" ? plugin.presets() : (plugin.presets || []);
@@ -111,7 +111,7 @@ function check(label, ok, detail) {
 		}
 		return results;
 	});
-	for (const id of ["swarm", "prism", "seedling", "utawa", "synthvault"]) {
+	for (const id of ["swarm", "prism", "seedling", "utawa", "synthvault", "replica"]) {
 		const r = audio[id];
 		check(id + " renders finite, audible sound for every preset", typeof r == "object" && r.nan == 0 && r.quiet == 0 && r.worstPeak < 4, JSON.stringify(r));
 	}
@@ -467,6 +467,7 @@ function check(label, ok, detail) {
 			for (let b = 0; b < 2; b++) { const m = lead[(bar * 2 + b) % lead.length]; tone(t + b * 2 * beat, m, beat * 1.8, 0.12, 3); truth.push({ t: t + b * 2 * beat, midi: m }); }
 		}
 		const r = await plugin.analyze(x, {});
+		window.__amSmall = r;
 		let hit = 0;
 		for (const g of truth) if (r.notes.some(n => Math.abs(n.t - g.t) < 0.06 && n.midi == g.midi)) hit++;
 		const correct = r.notes.filter(n => truth.some(g => Math.abs(n.t - g.t) < 0.06 && n.midi == g.midi)).length;
@@ -474,6 +475,66 @@ function check(label, ok, detail) {
 		return { snares, bpm: r.bpm, key: r.key.name, recall: +(hit / truth.length).toFixed(2), precision: +(correct / Math.max(1, r.notes.length)).toFixed(2), found: r.notes.length, truth: truth.length, kicks, drums: r.drums.length, chords: (r.chords || []).slice(0, 4).map(c => c.name || c).join(" ") };
 	});
 	check("AudioMidi transcribes a small arrangement (tempo, key, notes, drums)", Math.abs(am2.bpm - 120) < 0.6 && am2.recall > 0.6 && am2.precision > 0.5 && am2.kicks >= 28 && am2.snares >= 12 && am2.drums < 110 && am2.key == "C major", JSON.stringify(am2));
+	// ---- the clean arrangement and the instruments rebuilt from the same test song (Replica)
+	const am3 = await page.evaluate(async () => {
+		const r = window.__amSmall, rp = await beepbox.CarrotPlugins.load("replica");
+		const a = r.arr || {};
+		const onGrid = (list) => list.every(n => r.beats.some((b, i) => i + 1 < r.beats.length && [0, 1, 2, 3].some(k => Math.abs(n.t - (b + (r.beats[i + 1] - b) * k / (a.grid || 4))) < 0.002)));
+		const out = { grid: a.grid, bass: (a.bass || []).length, lead: (a.lead || []).length, chords: (a.chords || []).length, drums: (a.drums || []).length, onGrid: onGrid((a.bass || []).concat(a.lead || [], a.chords || [])) };
+		// one voice at a time in the bass and the lead
+		out.mono = ["bass", "lead"].every(role => (a[role] || []).every((n, i, l) => i == 0 || l[i - 1].t + l[i - 1].dur <= n.t + 1e-6));
+		out.instruments = Object.keys(r.instruments || {}).join(",");
+		out.sounds = {};
+		for (const role of Object.keys(r.instruments || {})) {
+			const params = rp.fromMeasurement(r.instruments[role], { name: role });
+			const pcm = role == "drums" ? rp.renderNote(params, 60, 0.3, 44100, 0.9, { pad: 0 }) : rp.renderNote(params, role == "bass" ? 36 : 64, 0.5, 44100, 0.9);
+			let peak = 0, bad = 0;
+			for (const v of pcm) { if (!Number.isFinite(v)) bad++; else peak = Math.max(peak, Math.abs(v)); }
+			out.sounds[role] = bad ? "NaN" : +peak.toFixed(3);
+		}
+		return out;
+	});
+	check("AudioMidi arranges cleanly: parts on the beat grid, one-voice bass and lead", am3.onGrid && am3.mono && am3.bass >= 20 && am3.drums >= 40, JSON.stringify(am3));
+	check("AudioMidi rebuilds the instruments it hears and Replica plays them", /bass/.test(am3.instruments) && /drums/.test(am3.instruments) && Object.values(am3.sounds).every(v => typeof v == "number" && v > 0.01 && v < 4), JSON.stringify(am3));
+	// ---- Utawa voice to notes: a hummed melody (off pitch, with scoops) and a beatbox
+	const voice = await page.evaluate(async () => {
+		const am = beepbox.CarrotPlugins.get("audiomidi");
+		const SR = am.SR, bpm = 120, beat = 0.5;
+		let seed = 5;
+		const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647 * 2 - 1;
+		const melody = [[0, 60, 1], [1, 62, 0.5], [1.5, 64, 0.5], [2, 65, 1], [3, 67, 2], [5, 65, 1], [6, 64, 1], [7, 62, 1], [8, 60, 2]];
+		const x = new Float32Array(Math.ceil(11 * beat * SR));
+		let ph = 0;
+		for (const [b, midi, len] of melody) {
+			const f = 440 * Math.pow(2, (midi - 0.3 - 69) / 12), dur = len * beat * 0.9, k0 = Math.floor(b * beat * SR);
+			for (let i = 0; i < dur * SR; i++) {
+				const t = i / SR;
+				ph += f * Math.pow(2, (-1.2 * Math.exp(-t / 0.04) + (t > 0.2 ? 0.2 * Math.sin(2 * Math.PI * 5.5 * t) : 0)) / 12) / SR;
+				let v = 0;
+				for (let h = 1; h <= 6; h++) v += Math.sin(2 * Math.PI * ph * h) / (h * h);
+				x[k0 + i] += 0.3 * v * Math.min(1, t / 0.03) * Math.min(1, (dur - t) / 0.05);
+			}
+		}
+		for (let i = 0; i < x.length; i++) x[i] += 0.002 * rand();
+		const scale = [1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1].map(Boolean);
+		const r = await am.analyzeVoice(x, { mode: "melody", bpm, grid: 4, scale, offset: 0 });
+		const right = melody.filter(([b, midi]) => r.notes.some(n => Math.abs(n.t - b * beat) < 0.02 && n.midi == midi)).length;
+		// beatbox: "boom" kicks, "pf" snares, "ts" hats
+		const y = new Float32Array(Math.ceil(4.5 * SR));
+		const pat = [];
+		for (let s = 0; s < 16; s++) pat.push([s * 0.5, s % 4 == 0 ? "kick" : s % 4 == 2 ? "snare" : "hat"]);
+		let lp = 0, h1 = 0, h2 = 0;
+		for (const [b, kind] of pat) {
+			const k0 = Math.floor(b * beat * SR);
+			if (kind == "kick") { let p = 0; for (let i = 0; i < 0.15 * SR; i++) { p += (90 + 60 * Math.exp(-i / (0.02 * SR))) / SR; y[k0 + i] += 0.6 * Math.sin(2 * Math.PI * p) * Math.exp(-i / (0.05 * SR)); } }
+			else if (kind == "snare") for (let i = 0; i < 0.12 * SR; i++) { const r2 = rand(); lp += 0.35 * (r2 - lp); y[k0 + i] += 0.5 * (r2 - lp * 0.6) * Math.exp(-i / (0.04 * SR)); }
+			else for (let i = 0; i < 0.05 * SR; i++) { const r2 = rand(), d = r2 - h1; h1 = r2; const d2 = d - h2; h2 = d; y[k0 + i] += 0.25 * d2 * Math.exp(-i / (0.015 * SR)); }
+		}
+		const rb = await am.analyzeVoice(y, { mode: "beatbox", bpm, grid: 4, offset: 0 });
+		const typed = pat.filter(([b, kind]) => rb.drums.some(d => Math.abs(d.t - b * beat) < 0.02 && d.kind == kind)).length;
+		return { notes: r.notes.length, right, of: melody.length, tuning: r.tuning, hits: rb.drums.length, typed, ofHits: pat.length };
+	});
+	check("Utawa voice to notes hears a hummed melody and a beatbox", voice.right >= voice.of - 1 && voice.notes <= voice.of + 1 && voice.typed >= voice.ofHits - 2 && voice.hits <= voice.ofHits + 2, JSON.stringify(voice));
 	check("sampler, slicex and fpc sound on every key", Object.keys(keys).length == 0, JSON.stringify(keys));
 
 	check("no errors in the console", errors.length == 0, errors.slice(0, 5).join(" | "));

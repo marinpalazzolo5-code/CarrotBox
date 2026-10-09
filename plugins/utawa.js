@@ -787,6 +787,287 @@
         for (let b = 0; b < bar; b++) { const pattern = song.getPattern(channelIndex, b); if (pattern) count += pattern.notes.length; }
         return count;
     }
+    // ------------------------------------------------------------ voice to notes
+    // Hum a melody, sing a bass line or beatbox a beat: the take is analyzed with AudioMidi's
+    // engine (pitch, onsets, drum sounds, the song's grid) and written into the song.
+    A.addStyle(`
+.cb-utawa-rec { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cb-utawa-recbtn { min-width: 118px; font-weight: 700; }
+.cb-utawa-recbtn.cb-live { background: #e0245e !important; color: #fff !important; border-color: #e0245e !important; animation: cb-utawa-pulse 1s infinite; }
+@keyframes cb-utawa-pulse { 50% { opacity: 0.7; } }
+.cb-utawa-meter { flex: 1 1 120px; height: 10px; border-radius: 5px; background: rgba(127,127,127,0.2); overflow: hidden; min-width: 100px; }
+.cb-utawa-meter div { height: 100%; width: 0%; background: linear-gradient(90deg, #7bd88f, #ffd166 70%, #ff6b6b); }
+.cb-utawa-live { font: 700 18px monospace; min-width: 64px; text-align: center; color: #ff7eb6; }
+.cb-utawa-vstats { font-size: 11px; opacity: 0.8; min-height: 16px; }
+`);
+    const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    const VOICE_MODES = [["melody", "Melody (hum or sing)"], ["bass", "Bass line (hum it, written low)"], ["beatbox", "Beatbox (drums)"], ["auto", "Melody + beatbox"]];
+    const VOICE_GRIDS = [[4, "1/16 notes"], [2, "1/8 notes"], [3, "1/8 triplets"], [1, "1/4 notes"], [0, "As sung (no snapping)"]];
+    const VOICE_SOUNDS = [["lead", "Lead synth"], ["keys", "Electric piano"], ["pluck", "Pluck"], ["pad", "Pad"], ["bass", "Bass"], ["utawa", "Utawa (sung)"]];
+    // a quick pitch guess for the live readout (autocorrelation on the last 2048 samples)
+    function livePitch(buf, sr) {
+        const n = buf.length;
+        let e = 0;
+        for (let i = 0; i < n; i++) e += buf[i] * buf[i];
+        if (e / n < 1e-5) return null;
+        const minLag = Math.floor(sr / 1000), maxLag = Math.min(n >> 1, Math.floor(sr / 60));
+        let best = -1, bestV = 0;
+        for (let lag = minLag; lag <= maxLag; lag++) {
+            let s = 0;
+            for (let i = 0; i + lag < n; i += 2) s += buf[i] * buf[i + lag];
+            if (s > bestV) { bestV = s; best = lag; }
+        }
+        if (best < 0 || bestV < 0.3 * e / 2) return null;
+        return 69 + 12 * Math.log2(sr / best / 440);
+    }
+    const activeTakes = new Set();
+    function voiceTab(host, getP) {
+        const doc = host.doc;
+        const st = { take: null, takeRate: 22050, result: null, rec: null, busy: false, name: "Voice" };
+        const settings = Object.assign({ mode: 0, grid: 0, scale: true, sens: 0.5, countIn: true, click: false, playSong: false, target: 0, sound: 0, at: 0 }, getP().voiceRec || {});
+        const save = () => { getP().voiceRec = Object.assign({}, settings); host.changed(false); };
+        const sel = (label, options, key, title, after) => CarrotUI.select({ label, options: options.map(o => Array.isArray(o) ? o[1] : o), value: settings[key] | 0, title, onChange: (v) => { settings[key] = v; save(); if (after) after(); } });
+        const tog = (label, key, title, after) => CarrotUI.toggle({ label, value: !!settings[key], title, onChange: (v) => { settings[key] = v; save(); if (after) after(); } });
+        const reanalyze = () => { if (st.take && !st.rec) analyzeTake(); };
+        const modeSel = sel("I will", VOICE_MODES, "mode", "What you are going to record", reanalyze);
+        const gridSel = sel("Snap to", VOICE_GRIDS, "grid", "Notes are placed on this grid of the song's tempo", reanalyze);
+        const scaleTog = tog("Song's scale", "scale", "Out-of-tune notes go to the nearest note of the song's scale", reanalyze);
+        const countTog = tog("Count-in", "countIn", "One bar of clicks at the song's tempo before recording starts; the recording starts on the bar line");
+        const clickTog = tog("Click while recording", "click", "Keep the metronome going while you record (use headphones)");
+        const songTog = tog("Play the song", "playSong", "Play the song from the start bar while you record (use headphones)");
+        const recBtn = CarrotUI.button("● Record", () => st.rec ? stopRecording() : startRecording(), { primary: true, title: "Record from the microphone" });
+        recBtn.classList.add("cb-utawa-recbtn");
+        const fileInput = HTML.input({ type: "file", accept: "audio/*,.wav,.mp3,.ogg,.flac,.m4a", style: "display: none;" });
+        const loadBtn = CarrotUI.button("Load a recording...", () => fileInput.click(), { title: "Use an audio file of your humming or beatboxing" });
+        const playBtn = CarrotUI.button("Play take", () => { if (st.take) A.FLSampleBank.previewPcm(st.take, st.takeRate, 0, 1, 1, 0.9); }, { title: "Listen to what was recorded" });
+        const meter = HTML.div({ class: "cb-utawa-meter" }, HTML.div());
+        const live = HTML.div({ class: "cb-utawa-live", title: "The note you are singing" }, "--");
+        const status = HTML.div({ class: "cb-utawa-vstats" }, "Press Record, then hum, sing or beatbox. The song's tempo (" + doc.song.tempo + " BPM) and key are used.");
+        const view = CarrotUI.canvas(150);
+        const sensKnob = CarrotUI.knob({ label: "Sensitivity", min: 0, max: 1, value: settings.sens, def: 0.5, format: (v) => Math.round(v * 100) + "%", title: "Higher picks up quieter notes and hits", onChange: (v) => { settings.sens = v; save(); reanalyze(); } });
+        const targetSel = sel("Write to", ["This channel (Utawa sings it)", "A new channel"], "target", "Where the notes go (beatbox always goes on a new drum channel)");
+        const soundSel = sel("New channel sound", VOICE_SOUNDS, "sound", "The sound of the new channel");
+        const atSel = sel("Starting at", ["The current bar", "Bar 1"], "at", "Where the take starts in the song");
+        const writeBtn = CarrotUI.button("Write to song", () => write(), { primary: true, title: "Write the notes into the song (Z undoes)" });
+        writeBtn.disabled = true;
+        playBtn.disabled = true;
+        fileInput.addEventListener("change", async () => {
+            const file = fileInput.files && fileInput.files[0];
+            fileInput.value = "";
+            if (!file) return;
+            const am = await audiomidi();
+            if (!am) return;
+            try {
+                status.textContent = "Reading " + file.name + "...";
+                const dec = await am.decodeFile(file);
+                st.take = dec.mono; st.takeRate = am.SR; st.name = file.name.replace(/\.[^.]+$/, "");
+                st.offset = "first";
+                analyzeTake();
+            }
+            catch (error) { status.textContent = "That file could not be read. Try WAV, MP3, OGG or FLAC."; }
+        });
+        async function audiomidi() {
+            try { return await B.CarrotPlugins.load("audiomidi"); }
+            catch (error) { host.toast("Voice to notes needs the AudioMidi plugin (Plugin Manager)."); return null; }
+        }
+        const startBar = () => settings.at == 1 ? 0 : Math.max(0, doc.bar | 0);
+        async function startRecording() {
+            if (st.busy) return;
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { host.toast("This browser cannot record from a microphone."); return; }
+            let stream;
+            try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } }); }
+            catch (error) { host.toast("Allow the microphone to record your voice."); return; }
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            const ctx = new Ctx();
+            await ctx.resume();
+            const src = ctx.createMediaStreamSource(stream);
+            const proc = ctx.createScriptProcessor(2048, 1, 1);
+            const sr = ctx.sampleRate, beat = 60 / doc.song.tempo, bpb = doc.song.beatsPerBar;
+            const rec = st.rec = { ctx, stream, src, proc, chunks: [], count: 0, level: 0, sr, start: 0, downbeat: 0, ringPos: 0, ring: new Float32Array(2048), stop: () => stopRecording() };
+            activeTakes.add(rec);
+            // count-in (and the click) on the recording's own clock
+            const click = (time, accent) => {
+                const o = ctx.createOscillator(), g = ctx.createGain();
+                o.frequency.value = accent ? 1760 : 1320;
+                g.gain.setValueAtTime(0.0001, time);
+                g.gain.exponentialRampToValueAtTime(0.35, time + 0.002);
+                g.gain.exponentialRampToValueAtTime(0.0001, time + 0.06);
+                o.connect(g); g.connect(ctx.destination);
+                o.start(time); o.stop(time + 0.08);
+            };
+            const t0 = ctx.currentTime + 0.15;
+            const countBeats = settings.countIn ? bpb : 0;
+            for (let k = 0; k < countBeats; k++) click(t0 + k * beat, k == 0);
+            rec.downbeat = t0 + countBeats * beat;
+            if (settings.click) { rec.clickUntil = rec.downbeat + 600; rec.nextClick = 0; }
+            proc.onaudioprocess = (e) => {
+                const a = e.inputBuffer.getChannelData(0);
+                if (!rec.count) rec.start = ctx.currentTime - a.length / sr - (ctx.baseLatency || 0);
+                rec.chunks.push(new Float32Array(a));
+                rec.count += a.length;
+                let peak = 0;
+                for (let i = 0; i < a.length; i++) { peak = Math.max(peak, Math.abs(a[i])); rec.ring[(rec.ringPos + i) & 2047] = a[i]; }
+                rec.ringPos = (rec.ringPos + a.length) & 2047;
+                rec.level = Math.max(peak, rec.level * 0.8);
+                // the metronome keeps going while recording
+                if (settings.click && ctx.currentTime > rec.downbeat - 0.2) {
+                    const k = Math.max(rec.nextClick, Math.ceil((ctx.currentTime + 0.05 - rec.downbeat) / beat));
+                    for (let j = k; rec.downbeat + j * beat < ctx.currentTime + 0.25; j++) { click(rec.downbeat + j * beat, j % bpb == 0); rec.nextClick = j + 1; }
+                }
+                e.outputBuffer.getChannelData(0).fill(0);
+            };
+            src.connect(proc);
+            proc.connect(ctx.destination);
+            recBtn.textContent = "■ Stop";
+            recBtn.classList.add("cb-utawa-recbtn", "cb-live");
+            writeBtn.disabled = true;
+            status.textContent = settings.countIn ? "Count-in: " + bpb + " clicks, then go." : "Recording - go!";
+            // the song from the start bar, on the downbeat
+            if (settings.playSong) {
+                const wait = Math.max(0, (rec.downbeat - ctx.currentTime) * 1000);
+                rec.songTimer = setTimeout(() => { doc.synth.goToBar(startBar()); doc.synth.snapToBar(); doc.performance.play(); }, wait);
+            }
+            const tick = () => {
+                if (st.rec != rec) return;
+                meter.firstChild.style.width = Math.round(Math.min(1, rec.level) * 100) + "%";
+                const ordered = new Float32Array(2048);
+                for (let i = 0; i < 2048; i++) ordered[i] = rec.ring[(rec.ringPos + i) & 2047];
+                const m = livePitch(ordered, sr);
+                live.textContent = m == null ? "--" : NOTE_NAMES[((Math.round(m) % 12) + 12) % 12] + (Math.floor(Math.round(m) / 12) - 1);
+                if (settings.countIn && ctx.currentTime < rec.downbeat) status.textContent = "Count-in: " + Math.max(1, Math.ceil((rec.downbeat - ctx.currentTime) / beat)) + "...";
+                else status.textContent = "Recording " + Math.max(0, ctx.currentTime - rec.downbeat).toFixed(1) + " s - press Stop when you are done.";
+                requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+        }
+        function stopRecording() {
+            const rec = st.rec;
+            if (!rec) return;
+            st.rec = null;
+            activeTakes.delete(rec);
+            clearTimeout(rec.songTimer);
+            if (settings.playSong && doc.synth.playing) doc.performance.pause();
+            try { rec.proc.disconnect(); rec.src.disconnect(); rec.stream.getTracks().forEach(t => t.stop()); rec.ctx.close(); } catch (error) { }
+            recBtn.textContent = "● Record";
+            recBtn.classList.remove("cb-live");
+            meter.firstChild.style.width = "0%";
+            live.textContent = "--";
+            const pcm = new Float32Array(rec.count);
+            let at = 0;
+            for (const c of rec.chunks) { pcm.set(c, at); at += c.length; }
+            // keep it from the downbeat on (a little before, for an early first note)
+            const lead = Math.max(0, Math.round((rec.downbeat - rec.start - 0.12) * rec.sr));
+            const take = pcm.subarray(Math.min(pcm.length, lead));
+            if (take.length < rec.sr * 0.3) { status.textContent = "That was too short. Record at least a second."; return; }
+            audiomidi().then(am => {
+                if (!am) return;
+                let mono = am.toRate(take, rec.sr, am.SR);
+                let peak = 0;
+                for (const v of mono) peak = Math.max(peak, Math.abs(v));
+                if (peak > 0) mono = mono.map(v => v / peak);
+                st.take = mono; st.takeRate = am.SR; st.name = "Voice";
+                st.offset = settings.countIn ? Math.min(0.12, lead / rec.sr) : "first";
+                analyzeTake();
+            });
+        }
+        async function analyzeTake() {
+            const am = await audiomidi();
+            if (!am || !st.take) return;
+            st.busy = true;
+            writeBtn.disabled = true;
+            playBtn.disabled = false;
+            const song = doc.song;
+            const keyPc = Config.keys[song.key].basePitch % 12, flags = Config.scales[song.scale].flags;
+            const scale = settings.scale ? Array.from({ length: 12 }, (_, pc) => !!flags[(pc - keyPc + 12) % 12]) : null;
+            const mode = VOICE_MODES[settings.mode | 0][0];
+            try {
+                status.textContent = "Listening...";
+                st.result = await am.analyzeVoice(st.take, { mode, bpm: song.tempo, beatsPerBar: song.beatsPerBar, grid: VOICE_GRIDS[settings.grid | 0][0], scale, sens: settings.sens, align: true, offset: st.offset }, (v, text) => { status.textContent = (text || "Listening") + "... " + Math.round(v * 100) + "%"; });
+                const r = st.result;
+                const kinds = {};
+                for (const d of r.drums) kinds[d.kind] = (kinds[d.kind] || 0) + 1;
+                status.textContent = (r.notes.length ? r.notes.length + " notes" + (r.notes.length ? " (" + noteRange(r.notes) + ")" : "") : "") + (r.notes.length && r.drums.length ? ", " : "") + (r.drums.length ? r.drums.length + " hits (" + Object.entries(kinds).map(([k, v]) => v + " " + k).join(", ") + ")" : "") + (r.tuning ? " - you sang " + Math.abs(r.tuning) + " cents " + (r.tuning > 0 ? "sharp" : "flat") + ", corrected" : "") + (r.notes.length || r.drums.length ? ". Write to song when it looks right." : "Nothing was heard. Try again a little louder, or raise Sensitivity.");
+                writeBtn.disabled = !(r.notes.length || r.drums.length);
+            }
+            catch (error) {
+                console.error(error);
+                status.textContent = "Listening failed: " + (error.message || error);
+            }
+            st.busy = false;
+            draw();
+        }
+        const noteRange = (notes) => { const ms = notes.map(n => n.midi); const lo = Math.min(...ms), hi = Math.max(...ms); const nm = (m) => NOTE_NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1); return lo == hi ? nm(lo) : nm(lo) + "-" + nm(hi); };
+        function draw() {
+            const { ctx, w, h } = CarrotUI.ctx(view);
+            ctx.fillStyle = "#14131a";
+            ctx.fillRect(0, 0, w, h);
+            const r = st.result;
+            if (!st.take) {
+                ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.font = "12px sans-serif"; ctx.textAlign = "center";
+                ctx.fillText("Your take, its pitch and the notes it becomes appear here", w / 2, h / 2);
+                ctx.textAlign = "left";
+                return;
+            }
+            const dur = Math.max(1, st.take.length / st.takeRate);
+            const xOf = (t) => t / dur * w;
+            // waveform
+            ctx.fillStyle = "rgba(0,200,255,0.18)";
+            const step = st.take.length / w;
+            for (let x = 0; x < w; x++) { let m = 0; for (let i = Math.floor(x * step); i < Math.floor((x + 1) * step); i += 8) m = Math.max(m, Math.abs(st.take[i] || 0)); ctx.fillRect(x, h / 2 - m * h * 0.45, 1, Math.max(1, m * h * 0.9)); }
+            if (!r) return;
+            // beat lines
+            const beat = 60 / r.bpm;
+            for (let b = 0; b * beat < dur; b++) { const x = xOf(b * beat + (typeof r.offset == "number" ? r.offset : 0)); ctx.fillStyle = b % doc.song.beatsPerBar == 0 ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.07)"; ctx.fillRect(x, 0, 1, h); }
+            const ms = r.notes.map(n => n.midi).concat(r.pitch.filter(v => v > 0));
+            const lo = (ms.length ? Math.min(...ms) : 48) - 2, hi = (ms.length ? Math.max(...ms) : 72) + 2;
+            const yOf = (m) => h - 14 - (m - lo) / Math.max(12, hi - lo) * (h - 24);
+            // notes (on the grid) and the sung pitch over them
+            const off = typeof r.offset == "number" ? r.offset : 0;
+            ctx.fillStyle = "#ff7eb6";
+            for (const n of r.notes) ctx.fillRect(xOf(n.t + off), yOf(n.midi) - 3, Math.max(2, xOf(n.dur) - 1), 6);
+            ctx.strokeStyle = "rgba(255,255,255,0.75)"; ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            let pen = false;
+            const bassShift = VOICE_MODES[settings.mode | 0][0] == "bass" && r.notes.length ? (() => { const voiced = r.pitch.filter(v => v > 0).sort((a, b) => a - b); const med = voiced[voiced.length >> 1] || 0; const nm = r.notes.map(n => n.midi).sort((a, b) => a - b)[r.notes.length >> 1]; return Math.round((nm - med) / 12) * 12; })() : 0;
+            r.pitch.forEach((v, f) => { const x = xOf(f / r.fps); if (!v) { pen = false; return; } const y = yOf(v + bassShift); if (pen) ctx.lineTo(x, y); else ctx.moveTo(x, y); pen = true; });
+            ctx.stroke();
+            // beatbox hits
+            const lane = { kick: 0, snare: 1, clap: 1, hat: 2, open: 3 };
+            const colors = { kick: "#ffcb6b", snare: "#82aaff", clap: "#82aaff", hat: "#c3e88d", open: "#89ddff" };
+            for (const d of r.drums) { ctx.fillStyle = colors[d.kind] || "#fff"; ctx.fillRect(xOf(d.t + off) - 2, h - 9 - (lane[d.kind] || 0) * 9, 5, 7); }
+            ctx.font = "10px sans-serif";
+            ctx.fillStyle = "rgba(255,255,255,0.55)";
+            ctx.fillText("pink: notes  -  white: your pitch  -  bottom: kick (yellow), snare (blue), hats (green)", 6, 12);
+        }
+        async function write() {
+            const am = await audiomidi();
+            if (!am || !st.result) return;
+            const t = host.target || {};
+            const here = settings.target == 0 && t.channel != undefined && !doc.song.getChannelIsNoise(t.channel);
+            const r = st.result;
+            // the take's time 0 is the bar line (the offset moved it onto the grid)
+            const shifted = { bpm: r.bpm, notes: r.notes.map(n => Object.assign({}, n)), drums: r.drums.map(d => Object.assign({}, d)) };
+            try {
+                const res = await am.writeVoice(host, shifted, { channel: here ? t.channel : null, target: here ? "here" : "new", sound: VOICE_SOUNDS[settings.sound | 0][0], startBar: startBar(), name: st.name });
+                status.textContent = res.written.length ? "Wrote " + res.written.join(" and ") + " from bar " + (res.startBar + 1) + ". Z undoes." : "Nothing to write.";
+                host.toast("Voice to notes: " + (res.written.join(", ") || "nothing written"));
+            }
+            catch (error) {
+                console.error(error);
+                status.textContent = "Writing failed: " + (error.message || error);
+            }
+        }
+        setTimeout(draw, 0);
+        const el = HTML.div(
+            CarrotUI.section("Record", HTML.div({ class: "cb-utawa-rec" }, recBtn, loadBtn, playBtn, meter, live), fileInput,
+                CarrotUI.row(modeSel, countTog, clickTog, songTog), status),
+            CarrotUI.section("Notes", view, CarrotUI.row(gridSel, scaleTog, sensKnob)),
+            CarrotUI.section("Write", CarrotUI.row(targetSel, soundSel, atSel, writeBtn)),
+            CarrotUI.hint("Hum or sing a melody (\"doo\" or \"dah\" on each note works best), hum a bass line (it is written an octave or two lower), or beatbox: \"b\"/\"boom\" for kicks, \"pf\"/\"k\" for snares, \"ts\"/\"t\" for hats and a long \"tsss\" for an open hat. Your pitch, your tuning and your timing are corrected to the song's grid, key and scale. Uses AudioMidi's engine."));
+        el.stop = () => { if (st.rec) stopRecording(); };
+        el.draw = draw;
+        return el;
+    }
     function buildEditor(host) {
         const getP = () => fill(host.params());
         const root = HTML.div();
@@ -1003,7 +1284,7 @@
         }
         const bank = HTML.div({ class: "cb-utawa-bank" }, bankAvatar, HTML.div(bankName, bankSub), bankPick);
         const pct = (v) => Math.round(v * 100) + "%";
-        const voiceTab = HTML.div(
+        const voiceTab2 = HTML.div(
             CarrotUI.section("Voice", CarrotUI.row(voiceSelect, host.toggle("robot", { label: "Robot (snap pitch)", def: false }))),
             CarrotUI.section("Voice parameters", CarrotUI.row(
                 host.knob("formant", { label: "GEN Gender", min: 0.75, max: 1.45, def: 1.16, format: v => v < 0.98 ? "Deep" : v > 1.24 ? "Young" : v > 1.06 ? "Female" : "Male", title: "Gender factor (formant shift): lower is a larger (male) voice, higher a smaller (female / young) one" }),
@@ -1033,7 +1314,9 @@
                 host.knob("consonant", { label: "Consonants", min: 0.4, max: 2, def: 1, format: v => Math.round(v * 100) + "%", title: "Length of the consonants" }),
                 host.knob("release", { label: "Release", min: 0.03, max: 0.6, def: 0.12, format: v => Math.round(v * 1000) + " ms" }))));
         const fxTab = HTML.div(CarrotUI.section("Effects", carrotFxRack(host, "fx", { max: 6 })));
-        const tabs = CarrotUI.tabs([["Lyrics", lyricsTab], ["Voice", voiceTab], ["Expression", expressionTab], ["Effects", fxTab]], () => setTimeout(() => redraws.forEach(f => f()), 0));
+        const recordTab = voiceTab(host, getP);
+        redraws.push(() => recordTab.draw());
+        const tabs = CarrotUI.tabs([["Lyrics", lyricsTab], ["Voice", voiceTab2], ["Expression", expressionTab], ["Voice to notes", recordTab], ["Effects", fxTab]], () => setTimeout(() => redraws.forEach(f => f()), 0));
         root.appendChild(bank);
         root.appendChild(tabs);
         host.onRefresh(() => {
@@ -1066,6 +1349,8 @@
         createInstrumentState,
         processInstrument,
         buildEditor,
+        // closing the window stops a recording in progress
+        onClose: () => { for (const rec of Array.from(activeTakes)) rec.stop(); },
         // exposed for tests and other tools
         parseLyrics,
         languages: LANGUAGES,

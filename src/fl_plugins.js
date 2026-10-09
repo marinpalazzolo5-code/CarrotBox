@@ -31,7 +31,7 @@
             blurb: "Sketch ideas fast: draw a melody line and it snaps to your scale, build chord progressions, bass lines and arps, then drop them straight into patterns.",
         },
         {
-            id: "utawa", name: "Utawa", kind: "instrument", file: "plugins/utawa.js", alt: "VOCALOID 6", icon: "Ut", color: "#ff7eb6", sizeKB: 71,
+            id: "utawa", name: "Utawa", kind: "instrument", file: "plugins/utawa.js", alt: "VOCALOID 6", icon: "Ut", color: "#ff7eb6", sizeKB: 92,
             blurb: "Singing synthesizer: type lyrics (English, Japanese romaji, Spanish or Chinese pinyin) and every note sings the next syllable, glides between notes, with consonants, vowels, vibrato, scoops, breath, choir unison and nine voice presets.",
         },
         {
@@ -43,8 +43,12 @@
             blurb: "Makes a lead, bass or any part bouncy: staccato, swing, octave hops, accents, pitch scoops, bouncing-ball echoes, chops, pushes and an optional sidechain pump. Eight styles, one undo step.",
         },
         {
-            id: "audiomidi", name: "AudioMidi", kind: "tool", file: "plugins/audiomidi.js", icon: "AM", color: "#00c8ff", sizeKB: 93,
+            id: "audiomidi", name: "AudioMidi", kind: "tool", file: "plugins/audiomidi.js", icon: "AM", color: "#00c8ff", sizeKB: 161,
             blurb: "Turns a WAV, MP3, OGG or FLAC into a song: finds the tempo (even when it drifts), beat, meter and key, hears every drum hit and matches it to the closest CarrotBox drum, and writes the bass, lead and chords as notes with velocity, glides and bends (the original stays muted on its own channel for A/B).",
+        },
+        {
+            id: "replica", name: "Replica", kind: "instrument", file: "plugins/replica.js", icon: "Rp", color: "#7fdbff", sizeKB: 58,
+            blurb: "Instruments rebuilt from a recording (AudioMidi measures them): the harmonics of a note at ten moments, its level curve, release, breath noise and vibrato, played back as morphing wavetables in up to two key zones; drums rebuilt as a sweeping body plus 32 noise bands. Everything is editable (draw harmonics, reshape drums) and can be kept in My instruments.",
         },
         {
             id: "curvebox", name: "Curvebox", kind: "effect", file: "plugins/curvebox.js", alt: "ShaperBox 3", icon: "Cv", color: "#ffd54f", sizeKB: 64,
