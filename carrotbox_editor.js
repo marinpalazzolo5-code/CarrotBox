@@ -18734,6 +18734,10 @@ FLKitLibrary._loadPromise = null;
             blurb: "Turns a WAV, MP3, OGG or FLAC into a song: finds the tempo (even when it drifts), beat, meter and key, hears every drum hit and matches it to the closest CarrotBox drum, and writes the bass, lead and chords as notes with velocity, glides and bends (the original stays muted on its own channel for A/B).",
         },
         {
+            id: "curvebox", name: "Curvebox", kind: "effect", file: "plugins/curvebox.js", alt: "ShaperBox 3", icon: "Cv", color: "#ffd54f", sizeKB: 64,
+            blurb: "Draw the movement: 11 shapers (Time, Pitch, Filter, Liquid, Drive, Crush, Noise, Volume, Pan, Width and Reverb), each with its own curve that loops with the song or restarts on every hit, with swing, smoothing and low/mid/high band processing. 24 presets, from sidechain pumps and trance gates to tape stops and dub throws.",
+        },
+        {
             id: "mangler", name: "Mangler FX", kind: "effect", file: "plugins/mangler.js", alt: "UGFX", icon: "Mg", color: "#f78c6c", sizeKB: 21,
             blurb: "Creative multi-effect rack: chain up to 8 effects (distortion, crusher, filter sweeps, chorus, phaser, flanger, delay, reverb, glitch repeats, tape stop...) with macros and presets.",
         },

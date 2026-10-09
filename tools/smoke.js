@@ -47,7 +47,7 @@ function check(label, ok, detail) {
 		await page.keyboard.press("Enter");
 		await page.waitForTimeout(500);
 	};
-	for (const query of ["swarm", "prism", "seedling", "chop", "sketch", "mangler", "utawa", "live loops", "bouncify", "sp-404", "audiomidi"]) {
+	for (const query of ["swarm", "prism", "seedling", "chop", "sketch", "mangler", "utawa", "live loops", "bouncify", "sp-404", "audiomidi", "curvebox"]) {
 		await launch(query);
 		const opened = await count();
 		await page.locator(".cb-window .cb-window-title button[title^='Close']").first().click();
@@ -115,6 +115,63 @@ function check(label, ok, detail) {
 		const r = audio[id];
 		check(id + " renders finite, audible sound for every preset", typeof r == "object" && r.nan == 0 && r.quiet == 0 && r.worstPeak < 4, JSON.stringify(r));
 	}
+
+	// ---- Curvebox: every preset, every shaper on its own and random patches stay finite and do something
+	const curve = await page.evaluate(async () => {
+		const plugin = await beepbox.CarrotPlugins.load("curvebox");
+		const sr = 44100, N = sr * 3, bpm = 120;
+		const inL = new Float32Array(N), inR = new Float32Array(N);
+		let seed = 3;
+		const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647 * 2 - 1;
+		for (let i = 0; i < N; i++) {
+			const saw = ((i * 110 / sr) % 1) * 2 - 1, beat = (i % (sr / 2)) < 2000 ? rand() * Math.exp(-(i % (sr / 2)) / 300) : 0;
+			inL[i] = 0.3 * saw + 0.5 * beat;
+			inR[i] = 0.3 * ((i * 110.5 / sr) % 1 * 2 - 1) + 0.5 * beat;
+		}
+		const run = (params) => {
+			const state = plugin.createState(sr, params);
+			const L = inL.slice(), R = inR.slice();
+			const ctx = { sampleRate: sr, beatPos: 0, samplesPerBeat: sr * 60 / bpm, bpm, beatsPerBar: 4, playing: true };
+			for (let start = 0; start < N; start += 256) {
+				const end = Math.min(N, start + 256);
+				ctx.beatPos = start / ctx.samplesPerBeat;
+				plugin.process(state, params, L, R, start, end, ctx);
+			}
+			let nan = 0, peak = 0, diff = 0, energyIn = 0, energyOut = 0;
+			for (let i = 0; i < N; i++) {
+				if (!Number.isFinite(L[i]) || !Number.isFinite(R[i])) { nan++; continue; }
+				peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i]));
+				diff += Math.abs(L[i] - inL[i]) + Math.abs(R[i] - inR[i]);
+				energyIn += inL[i] * inL[i] + inR[i] * inR[i];
+				energyOut += L[i] * L[i] + R[i] * R[i];
+			}
+			return { nan, peak, diff: diff / N, ratioDb: 10 * Math.log10(energyOut / energyIn) };
+		};
+		const bad = [], inert = [];
+		const sets = plugin.presets.map(p => [p.name, JSON.parse(JSON.stringify(p.params))]);
+		for (const id of plugin.shaperIds) {
+			const params = plugin.defaultParams();
+			params.sh = {};
+			params.sh[id] = { on: true };
+			sets.push(["shaper " + id, params]);
+			const banded = plugin.defaultParams();
+			banded.sh = {};
+			banded.sh[id] = { on: true, band: 2 };
+			sets.push(["shaper " + id + " (mid band)", banded]);
+		}
+		for (let i = 0; i < 6; i++) sets.push(["random " + i, plugin.randomize()]);
+		for (const [name, params] of sets) {
+			const r = run(params);
+			if (r.nan > 0 || r.peak > 4) bad.push(name + " " + JSON.stringify(r));
+			else if (r.diff < 1e-3) inert.push(name);
+		}
+		// a band split that changes nothing must leave the sound as it is
+		const neutral = plugin.defaultParams();
+		neutral.sh = { volume: { on: true, band: 1, w: [[0, 1, 0], [1, 1, 0]] } };
+		const split = run(neutral);
+		return { sets: sets.length, bad, inert, splitDb: +split.ratioDb.toFixed(2) };
+	});
+	check("Curvebox: presets, every shaper, bands and random patches", curve.sets > 40 && curve.bad.length == 0 && curve.inert.length == 0 && Math.abs(curve.splitDb) < 0.5, JSON.stringify(curve));
 
 	// ---- Live Loops: a sample of loops render at two tempos with exact lengths
 	const loops = await page.evaluate(() => {
